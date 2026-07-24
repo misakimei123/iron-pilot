@@ -2,7 +2,7 @@
 
 > 文档状态：`AUTHORITATIVE`
 >
-> 版本：`2.1.1`
+> 版本：`2.2.0`
 >
 > 日期：2026-07-24
 >
@@ -16,7 +16,7 @@
 
 ### 0.1 权威性
 
-本文件是 IronPilot 当前任务状态、任务依赖、阶段顺序和 Gate 的唯一权威来源。它已经吸收以下修订：
+本文件是 IronPilot 产品范围、架构边界、Task 定义、Task 依赖、验收标准、阶段顺序和 Gate 的唯一权威来源。它已经吸收以下修订：
 
 - `docs/AI_STRATEGY_AUTHORITY_REVISION.md`
 - `docs/MVP_DELIVERY_SCOPE_REVISION.md`
@@ -29,6 +29,8 @@
 2. 本文件；
 3. 上述修订文档；
 4. 旧版 ADR、`CONTEXT.md` 和历史计划。
+
+当前任务状态、开始和完成时间、实施提交、测试证据、阻塞问题及下一步行动，以 `docs/PROGRESS.md` 为唯一权威来源。两份文档不得同时维护动态任务状态；若 `PROGRESS.md` 中的静态定义与本文件冲突，以本文件为准。
 
 以下旧结论已被 v2 否决，不得继续生成实现依赖：
 
@@ -48,10 +50,13 @@ ADR-0002、ADR-0003、ADR-0004 和 `CONTEXT.md` 中与上述边界冲突的描�
 |---|---|
 | `DONE` | 交付物和本 Task 自身验收已完成 |
 | `READY` | 依赖已满足，可以开始 |
+| `IN_PROGRESS` | Task 已经开始实施，但尚未完成全部验收 |
 | `PLANNED` | 已定义但依赖尚未全部满足 |
 | `BLOCKED` | 已开始或已到 Gate，但存在明确阻断证据 |
 | `DEFERRED` | 不属于当前排期，不得隐式拉入当前阶段 |
 | `CANCELLED` | 已被方向修订取消 |
+
+状态定义由本文件规定，具体 Task 的当前状态只能记录在 `docs/PROGRESS.md`。
 
 Task 完成不等于 Gate 自动通过。实现者不得自批独立 Release Gate，也不得用收益覆盖安全失败。
 
@@ -62,9 +67,40 @@ Task 完成不等于 Gate 自动通过。实现者不得自批独立 Release Gat
 3. 做最小充分实现，禁止顺手扩展平台能力。
 4. 执行该 Task 定义的窄范围验证。
 5. 记录测试、审计或运行证据。
-6. 更新本计划状态；外部写操作和阶段 Gate 仍需独立授权。
+6. 只在 `docs/PROGRESS.md` 更新 Task 状态、实施提交、证据、阻塞和下一步行动；外部写操作和阶段 Gate 仍需独立授权。
 
-### 0.4 v2 修订记录
+### 0.4 默认冻结与计划变更控制
+
+`DEVELOPMENT_PLAN.md is DEFAULT-FROZEN.`
+
+- 普通 Task 实施不得修改本文件。
+- Task 从 `READY` 变为 `IN_PROGRESS` 或 `DONE` 时不得修改本文件。
+- 测试结果、Commit SHA 和阻塞情况不得写入本文件。
+- Codex 不得为了更新进度顺手修改本文件。
+
+只有发生以下情况时才允许修改本文件：
+
+- 产品范围变化；
+- Task 新增、删除、拆分或合并；
+- Task 直接依赖变化；
+- 架构或权限边界变化；
+- Task 验收标准变化；
+- 阶段 Gate 变化；
+- Deferred 能力进入当前范围；
+- 发现开发计划本身存在实质性错误。
+
+修改本文件必须同时满足：
+
+1. 用户明确授权修改开发计划；
+2. 独立于普通实现 Task 执行；
+3. 说明修改原因和影响范围；
+4. 更新计划版本号；
+5. 更新修订记录；
+6. 检查 Task 表、依赖图、正文和 Gate 的一致性；
+7. 使用独立提交；
+8. 不在同一提交中实施业务代码。
+
+### 0.5 v2 修订记录
 
 | 版本 | 日期 | 内容 |
 |---|---|---|
@@ -72,6 +108,7 @@ Task 完成不等于 Gate 自动通过。实现者不得自批独立 Release Gat
 | `2.0.0` | 2026-07-24 | 重建 AI 策略权限、Vertical Slice 优先路线、回测分层和 Gate；删除新闻及完整回测对首个闭环的硬依赖 |
 | `2.1.0` | 2026-07-24 | 解除 Paper Runtime 与 Replay 的非必要串行依赖；拆分 Testnet Smoke/Qualification Setup 与 Telegram/Emergency；冻结 Vertical Slice 最小策略空间和 2C2G Gate |
 | `2.1.1` | 2026-07-24 | 修复修订文档数量、Strategy Space 运行时版本、Emergency 入口认证边界和 Testnet Qualification 命名的一致性问题；不改变产品范围、任务顺序和安全 Gate |
+| `2.2.0` | 2026-07-24 | 将静态规划基线与动态实施进度分离；`DEVELOPMENT_PLAN.md` 默认冻结并继续作为范围、依赖和 Gate 的权威来源；新增 `PROGRESS.md` 作为任务状态、证据、阻塞和下一步行动的权威来源。未改变产品范围、Task 依赖和安全 Gate |
 
 ---
 
@@ -777,44 +814,46 @@ flowchart TD
 
 ---
 
-## 10. 当前进度总表
+## 10. Task 目录与依赖基线
 
-| Task | 名称 | 状态 | 直接依赖 |
-|---|---|---|---|
-| `P0-01` | 历史架构基线 | `DONE` | 无 |
-| `P0-02` | DEVELOPMENT_PLAN v2 权威计划重建 | `DONE` | `P0-01` |
-| `P0-03` | ADR 与领域词汇对齐 | `READY` | `P0-02` |
-| `P1-01` | Rust 工程骨架与质量门禁 | `READY` | `P0-02` |
-| `P1-02` | 核心领域、Strategy Intent 与状态机 | `PLANNED` | `P0-03`,`P1-01` |
-| `P1-03` | 配置、多标的与启动校验 | `PLANNED` | `P1-02` |
-| `P1-04` | SQLite、审计与单实例锁 | `PLANNED` | `P1-02` |
-| `P1-05` | 可观测性与运行时监督 | `PLANNED` | `P1-01`,`P1-04` |
-| `P2-01` | Bybit 公共 REST 元数据 | `PLANNED` | `P1-03` |
-| `P2-02` | 多标的公共 WebSocket | `PLANNED` | `P2-01`,`P1-05` |
-| `P2-03` | Market Features 与 Eligibility/Event Engine | `PLANNED` | `P2-02` |
-| `P2-04` | 历史回放与可复现快照 | `PLANNED` | `P2-03`,`P1-04` |
-| `P3-01` | Portfolio、受管资产与对账 | `PLANNED` | `P1-04`,`P2-01` |
-| `P3-02` | 确定性 Risk Engine | `PLANNED` | `P1-02`,`P3-01` |
-| `P3-09` | 确定性策略物化与交易参数 | `PLANNED` | `P1-02`,`P2-03`,`P3-01` |
-| `P3-03` | TradePlan Engine 与持仓管理 | `PLANNED` | `P1-02`,`P3-02`,`P3-09` |
-| `P3-04` | DeepSeek Strategy Intent Provider | `PLANNED` | `P1-02`,`P2-03` |
-| `P3-05` | 现货 Paper Execution | `PLANNED` | `P3-01`,`P3-03` |
-| `P3-10A` | Minimal Historical Harness | `PLANNED` | `P2-04`,`P3-02`,`P3-05`,`P3-09` |
-| `P3-06` | AI 驱动现货 Paper Runtime | `PLANNED` | `P3-04`,`P3-05`,`P3-09` |
-| `P3-07A` | Telegram 通知与只读查询 | `PLANNED` | `P1-05`,`P3-03` |
-| `P3-08` | Emergency Core | `PLANNED` | `P3-01`,`P3-03`,`P3-05` |
-| `P3-07B` | Telegram Emergency Adapter | `PLANNED` | `P3-07A`,`P3-08` |
-| `P3-VS` | AI Spot Paper Vertical Slice Gate | `PLANNED` | `P3-04`,`P3-05`,`P3-06`,`P3-07A`,`P3-07B`,`P3-08`,`P3-09`,`P3-10A` |
-| `P3-10B` | Full Historical Strategy Evaluation | `PLANNED` | `P3-VS` |
-| `P3-11` | Long-running Paper Safety | `PLANNED` | `P3-VS` |
-| `P4-01` | Bybit 私有流与订单同步 | `PLANNED` | `P3-VS`,`P2-02`,`P3-01` |
-| `P4-02A` | Testnet Protocol Smoke | `PLANNED` | `P3-VS`,`P4-01`,`P3-08` |
-| `P4-02B` | Testnet Qualification Setup | `PLANNED` | `P4-02A`,`P3-10B`,`P3-11` |
-| `P4-03` | Testnet 72h Stability and Recovery | `PLANNED` | `P4-02B` |
-| `P4-04` | Spot MVP Release Gate | `PLANNED` | `P4-03` |
-| `D-NEWS-01` | 新闻风控重新立项 | `DEFERRED` | 不进入当前依赖图 |
-| `P5-*` | 永续合约 | `DEFERRED` | `P4-04` 后重新授权 |
-| `P6-*` | 真实资金与扩容 | `DEFERRED` | 独立 Release Gate 与明确授权 |
+| Task | 名称 | 直接依赖 |
+|---|---|---|
+| `P0-01` | 历史架构基线 | 无 |
+| `P0-02` | DEVELOPMENT_PLAN v2 权威计划重建 | `P0-01` |
+| `P0-03` | ADR 与领域词汇对齐 | `P0-02` |
+| `P1-01` | Rust 工程骨架与质量门禁 | `P0-02` |
+| `P1-02` | 核心领域、Strategy Intent 与状态机 | `P0-03`,`P1-01` |
+| `P1-03` | 配置、多标的与启动校验 | `P1-02` |
+| `P1-04` | SQLite、审计与单实例锁 | `P1-02` |
+| `P1-05` | 可观测性与运行时监督 | `P1-01`,`P1-04` |
+| `P2-01` | Bybit 公共 REST 元数据 | `P1-03` |
+| `P2-02` | 多标的公共 WebSocket | `P2-01`,`P1-05` |
+| `P2-03` | Market Features 与 Eligibility/Event Engine | `P2-02` |
+| `P2-04` | 历史回放与可复现快照 | `P2-03`,`P1-04` |
+| `P3-01` | Portfolio、受管资产与对账 | `P1-04`,`P2-01` |
+| `P3-02` | 确定性 Risk Engine | `P1-02`,`P3-01` |
+| `P3-09` | 确定性策略物化与交易参数 | `P1-02`,`P2-03`,`P3-01` |
+| `P3-03` | TradePlan Engine 与持仓管理 | `P1-02`,`P3-02`,`P3-09` |
+| `P3-04` | DeepSeek Strategy Intent Provider | `P1-02`,`P2-03` |
+| `P3-05` | 现货 Paper Execution | `P3-01`,`P3-03` |
+| `P3-10A` | Minimal Historical Harness | `P2-04`,`P3-02`,`P3-05`,`P3-09` |
+| `P3-06` | AI 驱动现货 Paper Runtime | `P3-04`,`P3-05`,`P3-09` |
+| `P3-07A` | Telegram 通知与只读查询 | `P1-05`,`P3-03` |
+| `P3-08` | Emergency Core | `P3-01`,`P3-03`,`P3-05` |
+| `P3-07B` | Telegram Emergency Adapter | `P3-07A`,`P3-08` |
+| `P3-VS` | AI Spot Paper Vertical Slice Gate | `P3-04`,`P3-05`,`P3-06`,`P3-07A`,`P3-07B`,`P3-08`,`P3-09`,`P3-10A` |
+| `P3-10B` | Full Historical Strategy Evaluation | `P3-VS` |
+| `P3-11` | Long-running Paper Safety | `P3-VS` |
+| `P4-01` | Bybit 私有流与订单同步 | `P3-VS`,`P2-02`,`P3-01` |
+| `P4-02A` | Testnet Protocol Smoke | `P3-VS`,`P4-01`,`P3-08` |
+| `P4-02B` | Testnet Qualification Setup | `P4-02A`,`P3-10B`,`P3-11` |
+| `P4-03` | Testnet 72h Stability and Recovery | `P4-02B` |
+| `P4-04` | Spot MVP Release Gate | `P4-03` |
+| `D-NEWS-01` | 新闻风控重新立项 | 不进入当前依赖图 |
+| `P5-*` | 永续合约 | `P4-04` 后重新授权 |
+| `P6-*` | 真实资金与扩容 | 独立 Release Gate 与明确授权 |
+
+`D-NEWS-01`、`P5-*` 和 `P6-*` 在当前版本中属于静态 `DEFERRED` 范围分类，不表示日常实施进度；其当前状态仍只记录在 `docs/PROGRESS.md`。
 
 ---
 
@@ -822,7 +861,7 @@ flowchart TD
 
 ### P0 — Governance
 
-#### `P0-02` DEVELOPMENT_PLAN v2 权威计划重建 — `DONE`
+#### `P0-02` DEVELOPMENT_PLAN v2 权威计划重建
 
 - **目标**：把两份修订与用户确认转成单一可执行计划。
 - **交付物**：本文件。
@@ -1060,7 +1099,7 @@ flowchart TD
 
 ### Deferred
 
-#### `D-NEWS-01` 新闻风控重新立项 — `DEFERRED`
+#### `D-NEWS-01` 新闻风控重新立项
 
 - 当前不排期、不实现、不出现在默认链路和任何当前 Gate 中。
 - 不允许其他 Task 依赖本 Task。
