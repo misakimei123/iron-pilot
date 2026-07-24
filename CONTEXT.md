@@ -20,13 +20,17 @@ _Avoid_: AI 指令、最终执行决策、Candidate Decision
 `P3-VS` 前唯一可进入 DeepSeek 真实输出校验、Materializer、Risk Engine、TradePlan、Paper Runtime 和 Minimal Historical Harness 的可执行 Strategy Space 版本。完整 `StrategyIntent v2` Schema 中的未来枚举只是协议边界参考；后续能力必须发布新版本，不得静默扩展本版本。
 _Avoid_: `strategy-space-v1`（作为 P3-VS 运行时版本）、完整 Schema 等于当前可执行集合
 
+**资格与事件预筛（Eligibility / Event Prefilter）**:
+只判断市场数据、事件、系统状态、去重、冷却和 LLM 预算是否允许发起一次 AI 策略决策；可以生成受控事件，但不能决定交易方向、策略家族、入场、止损、目标或退出政策。`Rule Prefilter` 是历史术语，不用于当前运行时合同。
+_Avoid_: 规则候选生成器、有效做多机会、Rule Prefilter
+
 **风险裁决（Risk Decision）**:
 确定性 Risk Engine 对已验证 Strategy Intent、物化参数和当前账户状态作出的约束结果，可批准、拒绝、向下调整或触发受限状态；它不能替换 AI 策略或扩大风险。
 _Avoid_: 风险建议、AI 风控
 
-**新闻风险守卫（News Risk Guard）**:
-使用有来源、时效和影响范围的结构化新闻或事件数据，只能阻止新交易或降低系统权限的确定性门禁。
-_Avoid_: 黑天鹅探测器、新闻交易策略、新闻 AI 审批器
+**新闻能力（当前非目标）**:
+当前默认业务链没有 `NewsRiskGuard`、新闻 Provider、新闻 Prompt 输入或 `disabled` 占位节点，也不声称具备新闻风险保护。未来引入任何新闻门禁前，必须先修订开发计划和相关 ADR，冻结权限、失败语义、数据合同、回放证据与 Gate。
+_Avoid_: 默认新闻门禁、黑天鹅探测器、新闻交易策略、新闻 AI 审批器
 
 **市场特征快照（Market Feature Snapshot）**:
 针对一个交易标的和一个 K 线周期，由连续已闭合市场数据确定性生成并带版本、时效和来源证据的一组数值与受控语义观察。
@@ -40,9 +44,13 @@ _Avoid_: AI 支撑位、主观压力位
 只在合法关键位置由确定性规则识别的可选 K 线形态及其受控语义；它本身没有开仓、平仓或反转权限。
 _Avoid_: K 线信号、形态指令、必然反转
 
-**交易参数（Trade Parameters）**:
-由确定性代码根据市场结构、波动率、账户风险预算和交易所约束计算出的可执行入场条件、数量、止损和止盈参数。
-_Avoid_: AI 仓位建议、AI 止损价格
+**确定性策略物化（Deterministic Strategy Materialization）**:
+把已验证 Strategy Intent 中由 AI 选择的 strategy family、anchor、entry/stop/target policy 和 risk tier，结合不可变市场快照、组合状态、风险配置与交易所约束，版本化地转换为精确候选价格、数量和订单参数。物化器可以拒绝或收紧，但不能替换策略或在失败时另选交易。
+_Avoid_: 第二策略引擎、规则交易方案生成器、Trade Parameters Calculator（作为领域职责）
+
+**物化交易参数（Materialized Trade Parameters）**:
+确定性策略物化的候选输出，仍须经过 Risk Engine 审批、持久化 TradePlan 和 Execution Preflight 才能产生业务副作用。代码模块可暂时保留 `trade_parameters` 名称，但该名称不授予策略选择权。
+_Avoid_: AI 仓位建议、AI 止损价格、最终执行指令
 
 **交易计划（TradePlan）**:
 一次交易意图从候选、审批、入场、持仓管理到关闭与复盘的持久化业务实体。
@@ -53,7 +61,7 @@ _Avoid_: 信号、订单（订单只是 TradePlan 的执行记录）
 _Avoid_: 子账户全部余额、可见余额
 
 **历史策略回测（Historical Strategy Backtest）**:
-在冻结的历史行情、新闻、模型录制件或确定性桩上，复用 IronPilot 的规则、交易参数、风险、TradePlan 和 Paper Execution 语义，生成可复现交易账本、权益曲线和绩效证据的离线过程。
+在冻结的历史行情与不可变 manifest 上，复用 IronPilot 的 Market Features、Eligibility/Event Prefilter、录制 Strategy Intent 或确定性决策桩、Strategy Materialization、Risk、TradePlan 和 Paper Execution 语义，生成可复现交易账本、权益曲线和绩效证据的离线过程。当前合同不要求新闻数据。
 _Avoid_: 历史回放、Paper Trading、盈利证明
 
 **独立回测参考（Independent Backtest Reference）**:

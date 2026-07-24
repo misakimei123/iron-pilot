@@ -1,12 +1,15 @@
 ---
 status: accepted
+amended-by: 0005-bounded-ai-strategy-authority
 ---
 
 # 采用组合式历史回测与独立参考
 
-Rust 生态已经存在 NautilusTrader、Barter 等成熟的事件驱动交易和回测基础设施，但目前没有一个可直接等价替换 Freqtrade、同时面向加密货币个人量化交易者并开箱覆盖数据下载、策略回测、参数优化、Paper/Live、Telegram/WebUI 和分析报告的一体化框架。直接选择任一框架作为 IronPilot 的第二运行时，会复制本项目的 Trade Parameters、Risk、TradePlan、受管资产和订单状态机语义；完全自研 Freqtrade 等价物又会重复实现大量成熟能力。
+Rust 生态已经存在 NautilusTrader、Barter 等成熟的事件驱动交易和回测基础设施，但目前没有一个可直接等价替换 Freqtrade、同时面向加密货币个人量化交易者并开箱覆盖数据下载、策略回测、参数优化、Paper/Live、Telegram/WebUI 和分析报告的一体化框架。直接选择任一框架作为 IronPilot 的第二运行时，会复制本项目的 Strategy Materialization、Risk、TradePlan、受管资产和订单状态机语义；完全自研 Freqtrade 等价物又会重复实现大量成熟能力。
 
-IronPilot 因此采用组合式方案：历史策略回测必须复用本项目自身的 Market Feature、Rule Prefilter、News Risk Guard、录制决策或确定性模型桩、Trade Parameters、Risk、TradePlan 和 Paper Execution 领域链。`P3-10` 先对 NautilusTrader 与 Barter 做 capability、license、resource 和 semantic spike，合格能力以可替换 adapter 接入；若候选不能满足领域语义或 2C2G 资源预算，只补确定性时钟、编排和报告等最小缺口，不自研通用交易框架。Freqtrade 仅在无密钥、无交易网络的开发环境中充当冻结策略子集的独立回测参考，不进入生产依赖、配置、数据库或订单链路。
+IronPilot 因此采用组合式方案：历史策略回测必须复用本项目自身的 Market Features、Eligibility / Event Prefilter、录制 Strategy Intent 或确定性决策桩、Strategy Materialization、Risk、TradePlan 和 Paper Execution 领域链。当前默认链和回测 manifest 不包含新闻步骤。`P3-10A` 只建立 P3-VS 所需的最小历史正确性证据；`P3-10B` 在 P3-VS 后完成对照、样本外、成本压力和必要的独立参考。合格的开源能力可以窄 adapter 接入；若候选不能满足领域语义或 2C2G 资源预算，只补确定性时钟、编排和报告等最小缺口，不自研通用交易框架。Freqtrade 仅在无密钥、无交易网络的开发环境中充当冻结策略子集的独立回测参考，不进入生产依赖、配置、数据库或订单链路。
+
+本 ADR 的组合式回测与独立参考决策保持有效。原有管线术语和 AI 权限边界由 [ADR-0005](0005-bounded-ai-strategy-authority.md) 修订。
 
 ## Considered Options
 

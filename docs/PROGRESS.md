@@ -8,7 +8,7 @@
 >
 > Plan commit: `000ccf8257f0fb5a1fa0417792710ff654ba1d56`
 >
-> Last updated: 2026-07-24
+> Last updated: 2026-07-25
 
 ## Document Boundary
 
@@ -20,9 +20,8 @@
 ## Current Focus
 
 - Current phase: Phase A — Minimal Safety Kernel
-- In progress: None
+- In progress: P0-03
 - Ready:
-  - P0-03
   - P1-01
 - Blocked: None
 - Next recommended task: P0-03
@@ -33,7 +32,7 @@
 |---|---|---|---|---|---|---|
 | `P0-01` | `DONE` | — | 2026-07-24 | `edb5f861d2377b1ee9e95da934acffd226f1f938` | `CONTEXT.md`; `docs/adr/0001-spot-first-mvp.md` 至 `0004-compositional-historical-backtesting.md` | 历史架构基线 |
 | `P0-02` | `DONE` | — | 2026-07-24 | `033de133b42ce9a66b126fd8376fdd60b5b34a77` | `docs/DEVELOPMENT_PLAN.md` v2 重建及后续一致性修订 | 仅完成规划治理，未实施业务 Task |
-| `P0-03` | `READY` | — | — | — | — | 下一推荐 Task；本次未开始 |
+| `P0-03` | `IN_PROGRESS` | 2026-07-25 | — | — | — | 正在对齐 ADR、领域词汇与 v2 权威语言 |
 | `P1-01` | `READY` | — | — | — | — | 可独立执行；本次未开始 |
 | `P1-02` | `PLANNED` | — | — | — | — | — |
 | `P1-03` | `PLANNED` | — | — | — | — | — |
