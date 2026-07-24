@@ -98,7 +98,7 @@ P2-03 Market Features / Eligibility Events
 DeepSeek Provider 的核心开发实际需要：
 
 - `StrategyIntent v2` 领域类型；
-- `strategy-space-v1`；
+- `strategy-space-v1-vs`；
 - 固定 Market Feature Snapshot fixtures；
 - Prompt 与 Schema；
 - Serde 和语义验证器；
@@ -140,7 +140,7 @@ P1-02, P2-03
 
 ---
 
-## 4. 修订三：拆分 Testnet Protocol Smoke 与 Testnet Qualification
+## 4. 修订三：拆分 Testnet Protocol Smoke 与 Testnet Qualification Setup
 
 ### 4.1 当前问题
 
@@ -204,7 +204,7 @@ P3-08
 
 任何 Testnet 写调用仍须执行当时获得明确授权。
 
-### 4.3 原 `P4-02` 改为：`P4-02B Testnet Qualification`
+### 4.3 原 `P4-02` 改为：`P4-02B Testnet Qualification Setup`
 
 #### 依赖
 
@@ -216,7 +216,7 @@ P3-11
 
 #### 目标
 
-在长期 Paper 和完整历史策略证据通过后，将已验证的 Testnet 协议链进入正式资格测试。
+在长期 Paper 和完整历史策略证据通过后，冻结正式资格测试的输入和运行环境；本 Task 不宣告资格通过。
 
 ### 4.4 修改后的路线
 
@@ -230,8 +230,9 @@ P3-VS
 → P3-11 Long-running Paper
 
 P4-02A + P3-10B + P3-11
-→ P4-02B Testnet Qualification
+→ P4-02B Testnet Qualification Setup
 → P4-03 72h Stability
+→ Bybit Testnet Qualification Gate
 → P4-04 Spot MVP Gate
 ```
 
@@ -261,28 +262,24 @@ P3-07 Telegram
 ### 5.2 正确职责
 
 ```text
-EmergencyController
-→ 独立领域 / 应用服务
-
-Telegram Adapter
-→ 调用 EmergencyController
-
-Protected CLI / Loopback API
+Telegram / Protected CLI / Loopback API
+→ 完成各自的入口认证与确认
+→ 构造 AuthorizedEmergencyCommand
 → 调用同一个 EmergencyController
 ```
 
-所有入口必须复用同一套：
+每个入口 Adapter 负责身份/权限验证、入口特定防重放和确认流程，并构造统一命令。`AuthorizedEmergencyCommand` 至少包含：
 
-- 鉴权结果；
-- `EmergencyActionId`；
-- 二次确认状态；
-- 幂等；
-- 步骤持久化；
-- 中断恢复；
-- 受管资产边界；
-- 审计。
+- `request_id`
+- `actor_identity`
+- `source`
+- `requested_scope`
+- `authorization_proof` 或其不可逆 hash/reference
+- `confirmation_proof` 或其不可逆 hash/reference
+- `issued_at`
+- `expires_at`
 
-不得为 Telegram、CLI 或 API 各自实现不同的紧急逻辑。
+EmergencyController 负责稳定 `EmergencyActionId`、命令 TTL/业务幂等/范围校验、步骤持久化、中断恢复、受管资产边界、审计和最终结果；它不解释入口白名单、nonce、Bot Token 或交互状态。不得为 Telegram、CLI 或 API 各自实现不同的紧急逻辑。
 
 ### 5.3 推荐任务调整
 
@@ -311,10 +308,11 @@ P3-01, P3-03, P3-05
 负责：
 
 - Emergency Action 领域与状态机；
+- 接收 `AuthorizedEmergencyCommand` 并验证 TTL、幂等和请求范围；
 - 撤冲突订单；
 - 关闭受管敞口；
 - 幂等与重启恢复；
-- CLI / loopback port。
+- 审计与最终结果。
 
 #### `P3-07B Telegram Emergency Adapter`
 
@@ -328,7 +326,8 @@ P3-07A, P3-08
 
 - Telegram `Emergency Close All` 按钮；
 - 用户/chat 白名单；
-- nonce、TTL 和二次确认；
+- callback nonce、防重放数据和二次确认；
+- 构造 `AuthorizedEmergencyCommand`；
 - 调用统一 EmergencyController；
 - 展示进度和最终报告。
 
@@ -547,7 +546,7 @@ flowchart TD
     P402A["P4-02A Testnet Protocol Smoke"]
     P310B["P3-10B Full Historical"]
     P311["P3-11 Long-running Paper"]
-    P402B["P4-02B Testnet Qualification"]
+    P402B["P4-02B Testnet Qualification Setup"]
     P403["P4-03 72h Stability"]
 
     P203 --> P304

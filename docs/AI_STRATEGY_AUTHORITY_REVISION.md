@@ -520,7 +520,7 @@ Market Features
 
 ## 11. 版本和迁移策略
 
-1. 发布 `strategy-space-v1`，只包含 Spot MVP 实际支持的最小策略家族和政策。
+1. 发布 `strategy-space-v1-vs`，作为 `P3-VS` 前唯一可执行版本，只包含 Vertical Slice 实际支持的最小策略家族和政策；后续扩展发布新的明确版本，不得静默扩展该版本。
 2. 发布 `candidate-decision-schema-v2` 或等价命名。
 3. 旧 Schema v1 决策只可用于历史审计和 Replay，不可静默升级进入 Paper/Testnet。
 4. Prompt、Schema、Strategy Space、Materialization Algorithm 和 Risk Rules 必须分别版本化并记录 hash。

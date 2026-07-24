@@ -16,4 +16,5 @@ IronPilot 的首个纵向闭环采用 AI 驱动的多标的现货交易，并以
 
 - `InstrumentType::LinearPerpetual`、仓位和杠杆模型必须在架构中预留，但不属于 Spot MVP 的完成条件。
 - Spot MVP 完成不授权实盘；测试网、实盘和资金扩容分别使用独立门禁。
+- `P4-02A Testnet Protocol Smoke` 只验证协议，`P4-02B Testnet Qualification Setup` 只冻结资格测试输入；`P4-03` 完成 72 小时稳定性与故障恢复后，才可审查 Bybit Testnet Qualification Gate。
 - 后续合约阶段不得复用“余额即持仓”的现货假设。

@@ -12,12 +12,16 @@ _Avoid_: 自主交易员、无限自治 Agent
 由交易所、产品类型、交易符号和结算属性共同确定的可交易对象；相同 `symbol` 的现货和永续合约是不同交易标的。
 _Avoid_: 币种、交易对（用于泛指不同产品时）
 
-**候选决策（Candidate Decision）**:
-AI 针对一个交易标的和一个不可变市场上下文提出的结构化建议；它没有下单权限，也不是最终交易指令。
-_Avoid_: AI 指令、最终决策
+**策略意图（Strategy Intent）**:
+AI 针对一个交易标的和不可变市场上下文，在版本化 Strategy Space 内选择的结构化策略；它具有有界策略权限，但没有风险覆盖或执行权限。`Candidate Decision` 是历史术语，不用于当前运行时合同。
+_Avoid_: AI 指令、最终执行决策、Candidate Decision
+
+**Vertical Slice 策略空间（`strategy-space-v1-vs`）**:
+`P3-VS` 前唯一可进入 DeepSeek 真实输出校验、Materializer、Risk Engine、TradePlan、Paper Runtime 和 Minimal Historical Harness 的可执行 Strategy Space 版本。完整 `StrategyIntent v2` Schema 中的未来枚举只是协议边界参考；后续能力必须发布新版本，不得静默扩展本版本。
+_Avoid_: `strategy-space-v1`（作为 P3-VS 运行时版本）、完整 Schema 等于当前可执行集合
 
 **风险裁决（Risk Decision）**:
-确定性 Risk Engine 对候选决策和当前账户状态作出的最终约束结果，可批准、拒绝、调整或触发受限状态。
+确定性 Risk Engine 对已验证 Strategy Intent、物化参数和当前账户状态作出的约束结果，可批准、拒绝、向下调整或触发受限状态；它不能替换 AI 策略或扩大风险。
 _Avoid_: 风险建议、AI 风控
 
 **新闻风险守卫（News Risk Guard）**:
@@ -71,14 +75,26 @@ _Avoid_: 暂停（暂停可能禁止一切交易）
 _Avoid_: 临时错误、自动重试状态
 
 **紧急退出（Emergency Exit）**:
-经鉴权和二次确认后，禁止新开仓、撤销冲突订单、按交易所真实状态降低受管敞口并最终对账的幂等流程。
+入口 Adapter 完成自身认证和用户确认并构造 `AuthorizedEmergencyCommand` 后，由统一 EmergencyController 禁止新开仓、撤销冲突订单、按交易所真实状态降低受管敞口并最终对账的幂等流程。
 _Avoid_: 撤销全部订单、卖出全部余额
+
+**已授权紧急命令（Authorized Emergency Command）**:
+Telegram、受保护 CLI 或 loopback 管理 API 在完成入口身份验证、权限检查、防重放与确认后构造的统一命令；至少携带请求、主体、来源、范围、认证/确认凭据引用和有效期语义。Emergency Core 仍验证 TTL、业务幂等和请求范围。
+_Avoid_: Telegram callback、未经确认的 EmergencyAction、平台特定消息 DTO
+
+**紧急控制器（EmergencyController）**:
+不依赖 Telegram、Bot Token、入口白名单、nonce 或交互状态的统一领域/应用服务；负责稳定 EmergencyActionId、业务幂等、受管资产边界、撤单/降敞口、持久化、恢复、审计和最终结果。所有入口调用同一 Controller。
+_Avoid_: Telegram Emergency Service、CLI 专用退出逻辑、按入口复制紧急业务
 
 ## 交付语言
 
 **现货 MVP（Spot MVP）**:
-以 AI 驱动的多标的现货闭环为范围，完成历史回放、历史策略回测、实时 Paper Trading 和 Bybit 测试网验收；不包含真实资金和永续合约。
+以 AI 驱动的多标的现货闭环为范围，完成历史回放、历史策略回测、实时 Paper Trading、Testnet Protocol Smoke、Testnet Qualification Setup、72 小时 Stability and Recovery，并通过 Bybit Testnet Qualification Gate；不包含真实资金和永续合约。
 _Avoid_: 完整产品、实盘版本
+
+**Testnet Qualification Setup**:
+`P4-02B` 在 Protocol Smoke、Long-running Paper 和 Historical Strategy Evidence Gate 通过后冻结资格测试配置、版本、回滚和停止条件，为 `P4-03` 准备环境；它不表示 Testnet 资格已经通过。
+_Avoid_: Testnet Qualification、测试网已验收
 
 **Release Gate**:
 从一个风险阶段进入下一阶段前必须由独立证据和明确授权共同满足的放行门槛。
