@@ -340,37 +340,37 @@ Risk Engine 不能改变 AI 方向、替换策略或扩大风险。历史盈利�
   "decision_id": "uuid",
   "snapshot_id": "uuid",
   "instrument_id": "bybit:spot:BTCUSDT",
-  "action": "NO_TRADE|OPEN_LONG|HOLD|REDUCE|EXIT",
-  "strategy_family": "trend_breakout|trend_pullback|range_reversion|defensive_exit|none",
+  "action": "OPEN_LONG",
+  "strategy_family": "trend_breakout",
   "entry_policy": {
-    "type": "immediate_confirmed|breakout_retest|pullback_to_anchor|limit_at_anchor|none",
-    "anchor": "donchian_upper|donchian_lower|ema_fast|ema_slow|key_location|recent_swing|none",
+    "type": "breakout_retest",
+    "anchor": "donchian_upper",
     "max_wait_bars": 2,
-    "confirmation": "close_confirmed|rejection_confirmed|volume_confirmed|none"
+    "confirmation": "close_confirmed"
   },
   "stop_policy": {
-    "type": "structure_with_atr_buffer|atr_only|time_invalidation|none",
-    "anchor": "recent_swing|key_location|ema_slow|donchian_opposite|none",
-    "buffer_tier": "tight|normal|wide|none"
+    "type": "structure_with_atr_buffer",
+    "anchor": "recent_swing",
+    "buffer_tier": "normal"
   },
   "target_policy": {
-    "type": "next_structure|fixed_rr_tier|trailing|partial_then_trailing|none",
-    "minimum_rr_tier": "1_5R|2R|3R|none",
-    "trailing_anchor": "ema_fast|ema_slow|atr_band|structure|none"
+    "type": "fixed_rr_tier",
+    "minimum_rr_tier": "2R",
+    "trailing_anchor": "none"
   },
-  "risk_tier": "conservative|normal",
+  "risk_tier": "conservative",
   "maximum_holding_bars": 12,
-  "review_policy": "every_primary_close|on_structure_change|on_invalidation_risk|combined",
+  "review_policy": "every_primary_close",
   "invalidation_conditions": ["breakout_failed"],
-  "market_regime": "trend|range|breakout|uncertain",
-  "confidence": 0.5,
-  "thesis": "bounded text",
-  "data_quality_assessment": "acceptable|insufficient",
+  "market_regime": "breakout",
+  "confidence": 0.72,
+  "thesis": "Breakout retest held above the confirmed Donchian upper anchor.",
+  "data_quality_assessment": "acceptable",
   "risks": []
 }
 ```
 
-以上 JSON 是 `StrategyIntent v2` 的协议边界示例；其中汇总的未来枚举不代表当前全部可执行。字段名可在实现 Task 中最小化收敛，但以下边界不可改变：
+以上 JSON 是一个真实合法的 `strategy-space-v1-vs` `OPEN_LONG` 实例，不是枚举合集。完整 `StrategyIntent v2` Schema 可以描述未来协议边界，但不代表这些枚举当前可执行。字段名可在实现 Task 中最小化收敛，但以下边界不可改变：
 
 - 所有枚举、组合、长度、TTL 和动作由本地验证；
 - 未知字段默认拒绝；

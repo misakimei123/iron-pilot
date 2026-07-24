@@ -190,43 +190,43 @@ AI 输出不得包含或控制：
 ```json
 {
   "schema_version": "2.0",
+  "strategy_space_version": "strategy-space-v1-vs",
   "decision_id": "uuid",
   "snapshot_id": "uuid",
   "instrument_id": "bybit:spot:BTCUSDT",
-  "action": "NO_TRADE|OPEN_LONG|HOLD|REDUCE|EXIT",
-  "strategy_family": "trend_breakout|trend_pullback|range_reversion|defensive_exit|none",
+  "action": "OPEN_LONG",
+  "strategy_family": "trend_breakout",
   "entry_policy": {
-    "type": "immediate_confirmed|breakout_retest|pullback_to_anchor|limit_at_anchor|none",
-    "anchor": "donchian_upper|donchian_lower|ema_fast|ema_slow|key_location|recent_swing|none",
+    "type": "breakout_retest",
+    "anchor": "donchian_upper",
     "max_wait_bars": 2,
-    "confirmation": "close_confirmed|rejection_confirmed|volume_confirmed|none"
+    "confirmation": "close_confirmed"
   },
   "stop_policy": {
-    "type": "structure_with_atr_buffer|atr_only|time_invalidation|none",
-    "anchor": "recent_swing|key_location|ema_slow|donchian_opposite|none",
-    "buffer_tier": "tight|normal|wide|none"
+    "type": "structure_with_atr_buffer",
+    "anchor": "recent_swing",
+    "buffer_tier": "normal"
   },
   "target_policy": {
-    "type": "next_structure|fixed_rr_tier|trailing|partial_then_trailing|none",
-    "minimum_rr_tier": "1_5R|2R|3R|none",
-    "trailing_anchor": "ema_fast|ema_slow|atr_band|structure|none"
+    "type": "fixed_rr_tier",
+    "minimum_rr_tier": "2R",
+    "trailing_anchor": "none"
   },
-  "risk_tier": "conservative|normal",
+  "risk_tier": "conservative",
   "maximum_holding_bars": 12,
-  "review_policy": "every_primary_close|on_structure_change|on_invalidation_risk|combined",
+  "review_policy": "every_primary_close",
   "invalidation_conditions": [
-    "breakout_failed",
-    "trend_confirmation_lost"
+    "breakout_failed"
   ],
-  "market_regime": "trend|range|breakout|uncertain",
-  "confidence": "0.00..1.00",
-  "thesis": "short bounded text",
-  "data_quality_assessment": "acceptable|insufficient",
+  "market_regime": "breakout",
+  "confidence": 0.72,
+  "thesis": "Breakout retest held above the confirmed Donchian upper anchor.",
+  "data_quality_assessment": "acceptable",
   "risks": []
 }
 ```
 
-所有枚举、组合关系、长度、TTL 和动作合法性均由本地 Schema、Serde 和语义验证器严格校验，未知字段默认拒绝。
+以上 JSON 是一个真实合法的 `strategy-space-v1-vs` `OPEN_LONG` 实例，不是枚举合集。完整 Schema 可以描述未来协议边界，但所有枚举、组合关系、长度、TTL 和动作合法性均由本地 Schema、Serde 和语义验证器严格校验，未知字段默认拒绝。
 
 ## 5.4 策略模板必须版本化
 
@@ -521,7 +521,7 @@ Market Features
 ## 11. 版本和迁移策略
 
 1. 发布 `strategy-space-v1-vs`，作为 `P3-VS` 前唯一可执行版本，只包含 Vertical Slice 实际支持的最小策略家族和政策；后续扩展发布新的明确版本，不得静默扩展该版本。
-2. 发布 `candidate-decision-schema-v2` 或等价命名。
+2. 发布 `strategy-intent-schema-v2`。
 3. 旧 Schema v1 决策只可用于历史审计和 Replay，不可静默升级进入 Paper/Testnet。
 4. Prompt、Schema、Strategy Space、Materialization Algorithm 和 Risk Rules 必须分别版本化并记录 hash。
 5. 同一 TradePlan 必须可追溯：
