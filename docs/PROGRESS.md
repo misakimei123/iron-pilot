@@ -20,10 +20,11 @@
 ## Current Focus
 
 - Current phase: Phase A — Minimal Safety Kernel
-- In progress: P1-01
-- Ready: None
+- In progress: None
+- Ready:
+  - P1-02
 - Blocked: None
-- Next recommended task: P1-01
+- Next recommended task: P1-02
 
 ## Task Status
 
@@ -32,8 +33,8 @@
 | `P0-01` | `DONE` | — | 2026-07-24 | `edb5f861d2377b1ee9e95da934acffd226f1f938` | `CONTEXT.md`; `docs/adr/0001-spot-first-mvp.md` 至 `0004-compositional-historical-backtesting.md` | 历史架构基线 |
 | `P0-02` | `DONE` | — | 2026-07-24 | `033de133b42ce9a66b126fd8376fdd60b5b34a77` | `docs/DEVELOPMENT_PLAN.md` v2 重建及后续一致性修订 | 仅完成规划治理，未实施业务 Task |
 | `P0-03` | `DONE` | 2026-07-25 | 2026-07-25 | `98f87db43c9d8c23d563ce8df43d521ea434c924` | `docs/adr/0005-bounded-ai-strategy-authority.md`; ADR-0002/0003/0004 superseded/amended 标记；`CONTEXT.md`; 语义断言与 `git diff --check` | 未修改开发计划；未批准任何阶段 Gate |
-| `P1-01` | `IN_PROGRESS` | 2026-07-25 | — | — | — | 正在建立 Rust 工程骨架、固定工具链与质量门禁 |
-| `P1-02` | `PLANNED` | — | — | — | — | — |
+| `P1-01` | `DONE` | 2026-07-25 | 2026-07-25 | `705ca6f7b5aa4602072cc943295c15ae66bb780e` | Rust 质量门禁；空进程 smoke test；cargo-deny；Gitleaks；CI YAML 校验；零第三方 Cargo 依赖断言 | 无业务伪实现；未修改开发计划或批准 Gate |
+| `P1-02` | `READY` | — | — | — | — | `P0-03` 与 `P1-01` 已完成 |
 | `P1-03` | `PLANNED` | — | — | — | — | — |
 | `P1-04` | `PLANNED` | — | — | — | — | — |
 | `P1-05` | `PLANNED` | — | — | — | — | — |
@@ -100,11 +101,18 @@ None.
 - 证据：`docs/adr/0005-bounded-ai-strategy-authority.md`；ADR 相对链接检查；P0-03 语义断言；`git diff --check`；`docs/DEVELOPMENT_PLAN.md` 零差异。
 - 已知限制：本 Task 只完成文档与术语治理，不包含业务实现，不批准任何阶段 Gate，也不引入新闻能力。
 
+### P1-01 — Rust 工程骨架与质量门禁
+
+- 结果：建立 `ironpilot-domain`、`ironpilot-application`、`ironpilot-adapters` 和 `ironpilot` 四 crate 模块化单体骨架；固定 Rust 1.97.1；加入示例配置、CI、依赖治理、license/advisory/source policy 和 Git 历史秘密扫描。
+- Commit：`705ca6f7b5aa4602072cc943295c15ae66bb780e`。
+- 证据：`cargo fmt --all -- --check`；`cargo clippy --workspace --all-targets --locked -- -D warnings`；`cargo test --workspace --all-targets --locked`（1 个 smoke test 通过）；`cargo build --workspace --all-targets --locked`；`cargo metadata` 四 crate、零第三方依赖和零 Cargo feature 断言；cargo-deny 0.19.4 的 advisories/bans/licenses/sources 全部通过；Gitleaks 8.30.1 的完整历史与工作区扫描通过；CI YAML 语法检查通过。
+- 已知限制：空应用按设计不执行任何业务；配置键、领域类型、状态机和交易行为分别由后续 Task 实现；本 Task 不批准任何阶段 Gate。
+
 ## Next Action
 
-Execute P1-01 only.
+Execute P1-02 only.
 
-P0-03 is DONE. Do not start P1-02 until P1-01 is also DONE.
+Do not start P1-03 or P1-04 until P1-02 is DONE.
 
 以上内容是依据 `docs/DEVELOPMENT_PLAN.md` 静态依赖生成的进度建议，不改变任何 Task 依赖。
 
