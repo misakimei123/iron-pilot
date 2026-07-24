@@ -1,7 +1,17 @@
 //! IronPilot process entry point.
 //!
-//! The P1-01 skeleton intentionally performs no work and exits successfully.
+//! Configuration is validated before later tasks may initialize side effects.
 
 #![forbid(unsafe_code)]
 
-fn main() {}
+use std::process::ExitCode;
+
+fn main() -> ExitCode {
+    match ironpilot_adapters::load_startup_config() {
+        Ok(_) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("startup configuration rejected: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}

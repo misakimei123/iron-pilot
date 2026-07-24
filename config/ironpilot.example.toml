@@ -1,2 +1,0 @@
-# P1-01 intentionally defines no runtime configuration keys.
-# P1-03 owns the versioned configuration schema and startup validation.

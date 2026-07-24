@@ -1,7 +1,7 @@
 # Dependency Governance
 
-This document records dependencies introduced by `P1-01`. It does not authorize
-future dependencies or redefine task scope.
+This document records dependencies introduced by implementation tasks. It does
+not authorize future dependencies or redefine task scope.
 
 ## Cargo dependencies
 
@@ -11,8 +11,9 @@ features are disabled; only the listed features are enabled.
 | Dependency | Pin | Scope / owner | Purpose | License | Maintenance status | Features / resource impact | Exit plan |
 |---|---|---|---|---|---|---|---|
 | `rust_decimal` | `1.42.1` | Runtime / `ironpilot-domain` | Exact decimal values for all domain amounts | MIT | Maintained upstream | `std`; bounded CPU and 16-byte value representation | Replace with an audited fixed-scale integer type while preserving string wire encoding |
-| `serde` | `1.0.229` | Runtime / `ironpilot-domain` | Closed, explicit domain wire contracts | Apache-2.0 / MIT | Maintained upstream | `derive`, `std`; compile-time derive cost, no I/O or permissions | Replace derives with reviewed manual codecs if the wire layer changes |
+| `serde` | `1.0.229` | Runtime / `ironpilot-domain`, `ironpilot-application` | Closed domain and configuration wire contracts | Apache-2.0 / MIT | Maintained upstream | `derive`, `std`; compile-time derive cost, no I/O or permissions | Replace derives with reviewed manual codecs if the wire layer changes |
 | `uuid` | `1.24.0` | Runtime / `ironpilot-domain` | Typed stable identifiers | Apache-2.0 / MIT | Maintained upstream | `serde`, `std`; generation features are disabled, no randomness or I/O | Replace with an internal 16-byte identifier while preserving canonical UUID text |
+| `noyalib` | `0.0.16` | Runtime / `ironpilot-adapters` | Strict YAML startup configuration parsing | Apache-2.0 / MIT | Maintained upstream; pre-1.0 API is version-pinned | `minimal` only; pure Rust, configuration input capped at 64 KiB | Replace with another reviewed Serde YAML decoder or a schema-specific parser |
 | `proptest` | `1.11.0` | Development / `ironpilot-domain` | Property tests for state-machine fail-closed behavior | Apache-2.0 / MIT | Maintained upstream | `std`; test-only CPU and memory, no production binary impact | Replace with exhaustive transition tables plus deterministic fuzz tests |
 | `serde_json` | `1.0.151` | Development / `ironpilot-domain` | JSON contract and unknown-field rejection tests | Apache-2.0 / MIT | Maintained upstream | `std`; test-only allocation, no production binary impact | Replace with `serde_test` or reviewed fixture decoding |
 
@@ -27,8 +28,9 @@ dependency must be added only by the task that needs it and must record:
 - replacement or removal plan.
 
 The global default-feature ban remains enabled. `deny.toml` contains exact,
-version-pinned exceptions only for `serde_derive`'s proc-macro default feature
-and the test-only Unicode parser feature set pulled in by `proptest`.
+version-pinned exceptions only for `serde_derive`'s proc-macro default feature,
+the test-only Unicode parser feature set pulled in by `proptest`, and
+`noyalib`'s exact standard-library collection/scanner feature set.
 
 ## Workspace boundaries
 
@@ -39,8 +41,9 @@ and the test-only Unicode parser feature set pulled in by `proptest`.
 | `ironpilot-adapters` | External I/O and interface adapters | `ironpilot-application`, `ironpilot-domain` |
 | `ironpilot` | Composition root and process lifecycle | All workspace crates |
 
-P1-01 creates the compile boundaries only. It does not add path dependencies
-until a real contract is implemented and consumed.
+Version-pinned path dependencies now enforce the implemented direction:
+`ironpilot` → `ironpilot-adapters` → `ironpilot-application` →
+`ironpilot-domain`.
 
 ## Tooling dependencies
 

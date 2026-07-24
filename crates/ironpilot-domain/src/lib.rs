@@ -23,8 +23,8 @@ pub use state::{InvalidTransition, OrderState, SystemState, TradePlanState};
 pub use strategy::{
     BufferTier, EntryAnchor, EntryConfirmation, EntryPolicy, EntryPolicyType,
     InvalidationCondition, MinimumRiskReward, OpenPositionDecision, PositionReviewDecision,
-    ReviewPolicy, RiskTier, SchemaVersion, StopAnchor, StopPolicy, StopPolicyType, StrategyAction,
-    StrategyDecision, StrategyFamily, StrategyIntent, StrategySpaceVersion,
-    StrategyValidationError, TargetPolicy, TargetPolicyType, TrailingAnchor,
+    ReviewPolicy, RiskTier, STRATEGY_SPACE_VERSION_V1_VS, SchemaVersion, StopAnchor, StopPolicy,
+    StopPolicyType, StrategyAction, StrategyDecision, StrategyFamily, StrategyIntent,
+    StrategySpaceVersion, StrategyValidationError, TargetPolicy, TargetPolicyType, TrailingAnchor,
     ValidatedStrategyIntent,
 };

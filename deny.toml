@@ -61,6 +61,23 @@ allow = [
 ]
 exact = true
 
+# `noyalib`'s minimal parser profile uses these collection and scanning crates
+# with their standard-library defaults. Keep the transitive set exact.
+[[bans.features]]
+crate = "indexmap@2.14.0"
+allow = ["default", "serde", "std"]
+exact = true
+
+[[bans.features]]
+crate = "memchr@2.8.3"
+allow = ["alloc", "default", "std"]
+exact = true
+
+[[bans.features]]
+crate = "rustc-hash@2.1.3"
+allow = ["default", "std"]
+exact = true
+
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"

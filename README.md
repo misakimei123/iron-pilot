@@ -2,9 +2,9 @@
 
 Constrained autonomous trading with deterministic risk and execution boundaries.
 
-The current repository contains the `P1-01` Rust skeleton only. The executable
-intentionally performs no work; domain models and trading behavior begin in
-their explicitly dependent tasks.
+The current repository contains the Phase A domain and startup configuration
+kernel. The executable validates configuration and exits without starting
+trading behavior.
 
 ## Workspace
 
@@ -14,8 +14,23 @@ their explicitly dependent tasks.
 - `ironpilot`: composition root and process entry point.
 
 The dependency direction is documented in
-[`docs/DEPENDENCIES.md`](docs/DEPENDENCIES.md). The example configuration is
-intentionally empty because `P1-03` owns its schema.
+[`docs/DEPENDENCIES.md`](docs/DEPENDENCIES.md). A fail-closed YAML example is
+available at [`config/ironpilot.example.yaml`](config/ironpilot.example.yaml).
+
+## Validate startup configuration
+
+PowerShell:
+
+```powershell
+$env:IRONPILOT_CONFIG_PATH="config/ironpilot.example.yaml"
+$env:IRONPILOT_ENVIRONMENT="development"
+$env:IRONPILOT_ENVIRONMENT_FINGERPRINT="development-paper-local"
+cargo run --locked
+```
+
+The environment name and fingerprint must match the YAML document. Runtime
+limits, enabled Spot instruments, execution permission and semantic versions
+are validated before later tasks can initialize side effects.
 
 ## Local quality gates
 

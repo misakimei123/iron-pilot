@@ -20,9 +20,8 @@
 ## Current Focus
 
 - Current phase: Phase A — Minimal Safety Kernel
-- In progress: None
+- In progress: P1-03
 - Ready:
-  - P1-03
   - P1-04
 - Blocked: None
 - Next recommended task: P1-03
@@ -36,7 +35,7 @@
 | `P0-03` | `DONE` | 2026-07-25 | 2026-07-25 | `98f87db43c9d8c23d563ce8df43d521ea434c924` | `docs/adr/0005-bounded-ai-strategy-authority.md`; ADR-0002/0003/0004 superseded/amended 标记；`CONTEXT.md`; 语义断言与 `git diff --check` | 未修改开发计划；未批准任何阶段 Gate |
 | `P1-01` | `DONE` | 2026-07-25 | 2026-07-25 | `705ca6f7b5aa4602072cc943295c15ae66bb780e` | Rust 质量门禁；空进程 smoke test；cargo-deny；Gitleaks；CI YAML 校验；零第三方 Cargo 依赖断言 | 无业务伪实现；未修改开发计划或批准 Gate |
 | `P1-02` | `DONE` | 2026-07-25 | 2026-07-25 | `a2d2f4a9ad2851cb9443606942f274e6fa16a914` | 精确 Decimal、稳定 ID、Instrument 与 Strategy Intent 契约测试；三组状态机属性测试；Rust 全门禁；cargo-deny；Gitleaks；无浮点领域类型断言 | 未修改开发计划；未批准任何阶段 Gate |
-| `P1-03` | `READY` | — | — | — | — | `P1-02` 已完成 |
+| `P1-03` | `IN_PROGRESS` | 2026-07-25 | — | — | — | 正在实现严格 YAML/环境配置加载、启动校验和权限单调热加载 |
 | `P1-04` | `READY` | — | — | — | — | `P1-02` 已完成 |
 | `P1-05` | `PLANNED` | — | — | — | — | — |
 | `P2-01` | `PLANNED` | — | — | — | — | — |

@@ -1,0 +1,42 @@
+schema_version: ironpilot-config-v1
+
+environment:
+  name: development
+  fingerprint: development-paper-local
+
+permissions:
+  execution_mode: paper
+  ai_strategy_decisions: true
+
+versions:
+  market_features: ironpilot-market-features-v1
+  strategy_space: strategy-space-v1-vs
+  risk_rules: ironpilot-risk-rules-v1
+
+instruments:
+  - id: bybit:spot:BTCUSDT
+
+runtime:
+  target_cpu_cores: 2
+  target_memory_mb: 2048
+  memory_soft_limit_mb: 1400
+  max_enabled_instruments: 3
+  max_active_trade_plans: 2
+
+llm:
+  max_concurrency: 1
+  daily_call_limit: 40
+  daily_token_limit: 200000
+  daily_cost_limit_usd: "2.00"
+
+market:
+  candle_window_per_timeframe: 500
+  max_timeframes_per_instrument: 2
+
+storage:
+  sqlite_max_connections: 4
+  sqlite_write_concurrency: 1
+
+queues:
+  market_event_capacity_per_instrument: 1024
+  critical_event_capacity: 256
