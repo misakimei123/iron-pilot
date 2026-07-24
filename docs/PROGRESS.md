@@ -20,11 +20,11 @@
 ## Current Focus
 
 - Current phase: Phase A — Minimal Safety Kernel
-- In progress: P0-03
+- In progress: None
 - Ready:
   - P1-01
 - Blocked: None
-- Next recommended task: P0-03
+- Next recommended task: P1-01
 
 ## Task Status
 
@@ -32,7 +32,7 @@
 |---|---|---|---|---|---|---|
 | `P0-01` | `DONE` | — | 2026-07-24 | `edb5f861d2377b1ee9e95da934acffd226f1f938` | `CONTEXT.md`; `docs/adr/0001-spot-first-mvp.md` 至 `0004-compositional-historical-backtesting.md` | 历史架构基线 |
 | `P0-02` | `DONE` | — | 2026-07-24 | `033de133b42ce9a66b126fd8376fdd60b5b34a77` | `docs/DEVELOPMENT_PLAN.md` v2 重建及后续一致性修订 | 仅完成规划治理，未实施业务 Task |
-| `P0-03` | `IN_PROGRESS` | 2026-07-25 | — | — | — | 正在对齐 ADR、领域词汇与 v2 权威语言 |
+| `P0-03` | `DONE` | 2026-07-25 | 2026-07-25 | `98f87db43c9d8c23d563ce8df43d521ea434c924` | `docs/adr/0005-bounded-ai-strategy-authority.md`; ADR-0002/0003/0004 superseded/amended 标记；`CONTEXT.md`; 语义断言与 `git diff --check` | 未修改开发计划；未批准任何阶段 Gate |
 | `P1-01` | `READY` | — | — | — | — | 可独立执行；本次未开始 |
 | `P1-02` | `PLANNED` | — | — | — | — | — |
 | `P1-03` | `PLANNED` | — | — | — | — | — |
@@ -94,13 +94,18 @@ None.
 - 证据：`docs/DEVELOPMENT_PLAN.md` v2.2.0；Plan baseline commit `000ccf8257f0fb5a1fa0417792710ff654ba1d56`。
 - 已知限制：仅完成文档治理；没有开始 P0-03、P1-01 或任何业务开发 Task。
 
+### P0-03 — ADR 与领域词汇对齐
+
+- 结果：新增 ADR-0005，冻结有界 AI 策略权限；ADR-0002 标记为 superseded；ADR-0003/0004 与 `CONTEXT.md` 对齐 Eligibility / Event Prefilter、Strategy Intent、Deterministic Strategy Materialization 和无新闻默认链语言。
+- Commit：`98f87db43c9d8c23d563ce8df43d521ea434c924`。
+- 证据：`docs/adr/0005-bounded-ai-strategy-authority.md`；ADR 相对链接检查；P0-03 语义断言；`git diff --check`；`docs/DEVELOPMENT_PLAN.md` 零差异。
+- 已知限制：本 Task 只完成文档与术语治理，不包含业务实现，不批准任何阶段 Gate，也不引入新闻能力。
+
 ## Next Action
 
-Execute P0-03 only.
+Execute P1-01 only.
 
-P1-01 is also READY and may be executed independently, but neither task authorizes P1-02.
-
-Do not start P1-02 until both P0-03 and P1-01 are DONE.
+P0-03 is DONE. Do not start P1-02 until P1-01 is also DONE.
 
 以上内容是依据 `docs/DEVELOPMENT_PLAN.md` 静态依赖生成的进度建议，不改变任何 Task 依赖。
 
