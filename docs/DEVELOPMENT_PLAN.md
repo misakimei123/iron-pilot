@@ -2,7 +2,7 @@
 
 > 文档状态：`AUTHORITATIVE`
 >
-> 版本：`2.0.0`
+> 版本：`2.1.0`
 >
 > 日期：2026-07-24
 >
@@ -20,6 +20,7 @@
 
 - `docs/AI_STRATEGY_AUTHORITY_REVISION.md`
 - `docs/MVP_DELIVERY_SCOPE_REVISION.md`
+- `docs/DEVELOPMENT_PLAN_V2_REVIEW_ACTIONS.md`
 - 用户确认：新闻风控先不实现，默认交易流程链路没有新闻环节
 
 发生冲突时，适用顺序为：
@@ -69,6 +70,7 @@ Task 完成不等于 Gate 自动通过。实现者不得自批独立 Release Gat
 |---|---|---|
 | `1.0.0–1.3.0` | 2026-07-24 | 历史基线：Spot-first、确定性参数、新闻守卫、市场特征和组合式回测 |
 | `2.0.0` | 2026-07-24 | 重建 AI 策略权限、Vertical Slice 优先路线、回测分层和 Gate；删除新闻及完整回测对首个闭环的硬依赖 |
+| `2.1.0` | 2026-07-24 | 解除 Paper Runtime 与 Replay 的非必要串行依赖；拆分 Testnet Smoke/Qualification 与 Telegram/Emergency；冻结 Vertical Slice 最小策略空间和 2C2G Gate |
 
 ---
 
@@ -374,7 +376,64 @@ Risk Engine 不能改变 AI 方向、替换策略或扩大风险。历史盈利�
 - v1 决策只能用于历史审计和 Replay，不得静默映射为 v2 后进入 Paper/Testnet；
 - Strategy Space、Prompt、Model、Schema、Materializer 和 Risk Rules 分别记录版本与 hash。
 
-### 5.2 追溯链
+### 5.2 Vertical Slice 最小可执行策略空间
+
+完整 Schema 可以保留未来合法枚举，但 `P3-VS` 前只实现 `strategy-space-v1-vs`，不得把完整组合解释为 Vertical Slice 的交付范围。
+
+新开仓最小子集：
+
+```yaml
+action:
+  - OPEN_LONG
+  - NO_TRADE
+strategy_family:
+  - trend_breakout
+entry_policy:
+  - breakout_retest
+entry_anchor:
+  - donchian_upper
+  - key_location
+entry_confirmation:
+  - close_confirmed
+  - rejection_confirmed
+stop_policy:
+  - structure_with_atr_buffer
+stop_anchor:
+  - recent_swing
+  - key_location
+buffer_tier:
+  - normal
+target_policy:
+  - fixed_rr_tier
+  - next_structure
+minimum_rr_tier:
+  - 2R
+risk_tier:
+  - conservative
+  - normal
+```
+
+持仓管理最小子集：
+
+```yaml
+action:
+  - HOLD
+  - EXIT
+review_policy:
+  - every_primary_close
+  - on_invalidation_risk
+```
+
+以下能力属于 Schema 的后续边界，不阻塞 `P3-VS`：
+
+- `trend_pullback`、`range_reversion` 和多策略家族自动切换；
+- `partial_then_trailing`、多档 trailing anchor 和复杂分批减仓；
+- `wide` 风险 buffer；
+- AI 加仓、亏损补仓和同一 TradePlan 内策略家族迁移。
+
+`P3-VS` 后若扩展可执行 Strategy Space，必须发布独立版本，并同步增加 Schema 合法组合、Materializer、Risk、Replay/Harness fixtures 和 A/B/C 分段证据；不得静默扩展 `strategy-space-v1-vs`。
+
+### 5.3 追溯链
 
 ```text
 Market Snapshot
@@ -458,6 +517,47 @@ Pure domain types and invariants
 
 不为新闻、通用研究平台、高级绩效仓库或长期归档预建表。
 
+### 6.4 2C2G 资源预算
+
+2 核 CPU、2 GB RAM 是当前原型的目标运行约束，不是普通部署建议。Vertical Slice 使用以下安全默认值：
+
+```yaml
+runtime:
+  target_cpu_cores: 2
+  target_memory_mb: 2048
+  memory_soft_limit_mb: 1400
+  max_enabled_instruments: 3
+  max_active_trade_plans: 2
+
+llm:
+  max_concurrency: 1
+  daily_call_limit: 40
+  daily_token_limit: 200000
+  daily_cost_limit_usd: "2.00"
+
+market:
+  candle_window_per_timeframe: 500
+  max_timeframes_per_instrument: 2
+
+storage:
+  sqlite_max_connections: 4
+  sqlite_write_concurrency: 1
+
+queues:
+  market_event_capacity_per_instrument: 1024
+  critical_event_capacity: 256
+```
+
+超限行为必须确定且 fail closed：
+
+- 启用标的超过 3 个：启动失败；
+- 活动 TradePlan 达到 2 个：Risk 拒绝新开仓；
+- LLM 并发超过 1：排队至事件 TTL，过期转 `NO_TRADE`；
+- LLM 日调用、Token 或成本预算耗尽：停止新 AI 开仓，已有 TradePlan 继续确定性管理；
+- 内存超过 1400 MB 软门槛：停止新 AI 调用和新开仓，进入可见告警/观察状态；
+- 关键队列饱和：禁止静默丢失，进入明确降级或 halt；
+- SQLite 关键写超时：不得下单。
+
 ---
 
 ## 7. 历史证据分层
@@ -506,7 +606,22 @@ AI 弱于 Rule-only 不代表工程失败，但该版本不得升级为 `entry_e
 
 ## 8. Telegram 与紧急控制
 
-### 8.1 默认用户能力
+### 8.1 Emergency Core 边界
+
+EmergencyController 是独立的领域/应用能力，不依赖 Telegram、Bot Token、通知 outbox 或外部消息服务。Telegram、受保护 CLI 和 loopback-only 管理 API 只能作为 Adapter 调用同一个 EmergencyController。
+
+所有入口必须复用同一套：
+
+- 鉴权结果和 `EmergencyActionId`；
+- nonce、TTL 与二次确认状态；
+- 幂等和步骤持久化；
+- 中断与重启恢复；
+- 受管资产边界；
+- 审计和最终报告。
+
+不得为 Telegram、CLI 或 API 分别实现紧急退出业务逻辑。Telegram 不可用时，受保护 CLI 或 loopback port 仍必须能够调用 Emergency Core。
+
+### 8.2 默认用户能力
 
 - `System Status`
 - `Current Positions`
@@ -517,7 +632,7 @@ AI 弱于 Rule-only 不代表工程失败，但该版本不得升级为 `entry_e
 
 `Emergency Close All` 必须鉴权、二次确认、幂等、只处理受管资产并完整审计。
 
-### 8.2 不属于普通菜单的能力
+### 8.3 不属于普通菜单的能力
 
 - `Pause New Entries`
 - `Resume`
@@ -540,9 +655,9 @@ AI 弱于 Rule-only 不代表工程失败，但该版本不得升级为 `entry_e
 4. **Phase D — Prototype Vertical Slice**
    - 通过 `P3-VS`，形成第一条真实可运行闭环。
 5. **Phase E — Parallel Hardening**
-   - 30 天 Paper、Full Historical Strategy Evaluation、故障注入、资源和数据库增长治理。
+   - 30 天 Paper、Full Historical Strategy Evaluation、Testnet Protocol Smoke、故障注入、资源和数据库增长治理。
 6. **Phase F — Testnet and Release**
-   - 私有流、真实协议、72 小时 Testnet 和 Spot MVP Release Gate。
+   - Testnet Qualification、72 小时稳定性和 Spot MVP Release Gate。
 
 ### 9.2 默认依赖图
 
@@ -567,13 +682,15 @@ flowchart TD
     P305["P3-05 Paper Execution"]
     P310A["P3-10A Minimal Harness"]
     P306["P3-06 Paper Runtime"]
-    P307["P3-07 Telegram"]
-    P308["P3-08 Emergency Close"]
+    P307A["P3-07A Telegram Read-only"]
+    P308["P3-08 Emergency Core"]
+    P307B["P3-07B Telegram Emergency Adapter"]
     P3VS{"P3-VS Prototype Gate"}
     P310B["P3-10B Full Historical Evaluation"]
     P311["P3-11 Long-running Paper"]
     P401["P4-01 Private Sync"]
-    P402["P4-02 Testnet Execution"]
+    P402A["P4-02A Testnet Protocol Smoke"]
+    P402B["P4-02B Testnet Qualification"]
     P403["P4-03 Testnet Stability"]
     P404{"P4-04 Spot MVP Gate"}
 
@@ -591,7 +708,7 @@ flowchart TD
     P301 --> P309 --> P303
     P302 --> P303 --> P305
     P102 --> P304
-    P204 --> P304
+    P203 --> P304
     P204 --> P310A
     P302 --> P310A
     P305 --> P310A
@@ -599,15 +716,18 @@ flowchart TD
     P304 --> P306
     P305 --> P306
     P309 --> P306
-    P310A --> P306
-    P105 --> P307
-    P303 --> P307 --> P308
+    P105 --> P307A
+    P303 --> P307A
     P301 --> P308
+    P303 --> P308
     P305 --> P308
+    P307A --> P307B
+    P308 --> P307B
     P306 --> P3VS
     P304 --> P3VS
     P305 --> P3VS
-    P307 --> P3VS
+    P307A --> P3VS
+    P307B --> P3VS
     P308 --> P3VS
     P309 --> P3VS
     P310A --> P3VS
@@ -616,11 +736,13 @@ flowchart TD
     P3VS --> P401
     P202 --> P401
     P301 --> P401
-    P401 --> P402
-    P308 --> P402
-    P310B --> P402
-    P311 --> P402
-    P402 --> P403 --> P404
+    P401 --> P402A
+    P308 --> P402A
+    P3VS --> P402A
+    P402A --> P402B
+    P310B --> P402B
+    P311 --> P402B
+    P402B --> P403 --> P404
 ```
 
 图中没有新闻任务或新闻依赖。
@@ -647,18 +769,20 @@ flowchart TD
 | `P3-02` | 确定性 Risk Engine | `PLANNED` | `P1-02`,`P3-01` |
 | `P3-09` | 确定性策略物化与交易参数 | `PLANNED` | `P1-02`,`P2-03`,`P3-01` |
 | `P3-03` | TradePlan Engine 与持仓管理 | `PLANNED` | `P1-02`,`P3-02`,`P3-09` |
-| `P3-04` | DeepSeek Strategy Intent Provider | `PLANNED` | `P1-02`,`P2-04` |
+| `P3-04` | DeepSeek Strategy Intent Provider | `PLANNED` | `P1-02`,`P2-03` |
 | `P3-05` | 现货 Paper Execution | `PLANNED` | `P3-01`,`P3-03` |
 | `P3-10A` | Minimal Historical Harness | `PLANNED` | `P2-04`,`P3-02`,`P3-05`,`P3-09` |
-| `P3-06` | AI 驱动现货 Paper Runtime | `PLANNED` | `P3-04`,`P3-05`,`P3-09`,`P3-10A` |
-| `P3-07` | Telegram 通知与只读查询 | `PLANNED` | `P1-05`,`P3-03` |
-| `P3-08` | Emergency Close 与受管现货退出 | `PLANNED` | `P3-01`,`P3-05`,`P3-07` |
-| `P3-VS` | AI Spot Paper Vertical Slice Gate | `PLANNED` | `P3-04`,`P3-05`,`P3-06`,`P3-07`,`P3-08`,`P3-09`,`P3-10A` |
+| `P3-06` | AI 驱动现货 Paper Runtime | `PLANNED` | `P3-04`,`P3-05`,`P3-09` |
+| `P3-07A` | Telegram 通知与只读查询 | `PLANNED` | `P1-05`,`P3-03` |
+| `P3-08` | Emergency Core | `PLANNED` | `P3-01`,`P3-03`,`P3-05` |
+| `P3-07B` | Telegram Emergency Adapter | `PLANNED` | `P3-07A`,`P3-08` |
+| `P3-VS` | AI Spot Paper Vertical Slice Gate | `PLANNED` | `P3-04`,`P3-05`,`P3-06`,`P3-07A`,`P3-07B`,`P3-08`,`P3-09`,`P3-10A` |
 | `P3-10B` | Full Historical Strategy Evaluation | `PLANNED` | `P3-VS` |
 | `P3-11` | Long-running Paper Safety | `PLANNED` | `P3-VS` |
 | `P4-01` | Bybit 私有流与订单同步 | `PLANNED` | `P3-VS`,`P2-02`,`P3-01` |
-| `P4-02` | Bybit 现货 Testnet Execution | `PLANNED` | `P4-01`,`P3-08`,`P3-10B`,`P3-11` |
-| `P4-03` | Testnet 故障恢复与 72h 稳定性 | `PLANNED` | `P4-02` |
+| `P4-02A` | Testnet Protocol Smoke | `PLANNED` | `P3-VS`,`P4-01`,`P3-08` |
+| `P4-02B` | Testnet Qualification | `PLANNED` | `P4-02A`,`P3-10B`,`P3-11` |
+| `P4-03` | Testnet 故障恢复与 72h 稳定性 | `PLANNED` | `P4-02B` |
 | `P4-04` | Spot MVP Release Gate | `PLANNED` | `P4-03` |
 | `D-NEWS-01` | 新闻风控重新立项 | `DEFERRED` | 不进入当前依赖图 |
 | `P5-*` | 永续合约 | `DEFERRED` | `P4-04` 后重新授权 |
@@ -705,9 +829,9 @@ flowchart TD
 #### `P1-03` 配置、多标的与启动校验
 
 - **目标**：实现 1–3 个非硬编码 Spot 标的、分层权限和资源保护。
-- **任务**：YAML/环境变量加载、Schema、环境指纹、feature/strategy/risk 版本、保守热加载。
+- **任务**：YAML/环境变量加载、Schema、环境指纹、feature/strategy/risk 版本、保守热加载，以及第 6.4 节 2C2G 安全默认值。
 - **依赖**：`P1-02`。
-- **验收**：错误环境、未知版本、超资源、Spot 非法字段和扩大权限的热加载均在产生副作用前失败。
+- **验收**：错误环境、未知版本、超过 3 个标的、超资源、Spot 非法字段和扩大权限的热加载均在产生副作用前失败。
 
 #### `P1-04` SQLite、审计与单实例锁
 
@@ -719,9 +843,9 @@ flowchart TD
 #### `P1-05` 可观测性与运行时监督
 
 - **目标**：异步任务有界、可取消、可观测并能安全关闭。
-- **任务**：Tokio supervisor、有界 channel、shutdown、health、correlation IDs。
+- **任务**：Tokio supervisor、有界 channel、shutdown、health、correlation IDs、RSS/CPU/队列水位和内存软门槛降级。
 - **依赖**：`P1-01`,`P1-04`。
-- **验收**：队列饱和行为明确；关键事件不静默丢失；健康状态反映可信度而非仅进程存活。
+- **验收**：队列容量符合第 6.4 节；饱和时明确降级或 halt；关键事件不静默丢失；健康状态反映可信度而非仅进程存活。
 
 ### P2 — Market to Eligibility Event
 
@@ -776,7 +900,8 @@ flowchart TD
 
 - **目标**：把合法 Strategy Intent 物化为精确、可复现、可审计的交易参数。
 - **依赖**：`P1-02`,`P2-03`,`P3-01`。
-- **测试**：缺失 anchor、非法组合、零/极端 ATR、tick/qty、费用/滑点、最低金额、相同输入可复现。
+- **范围**：`P3-VS` 前只实现 `strategy-space-v1-vs`；完整 Schema 中的其余组合不属于当前 Task 的前置范围。
+- **测试**：最小策略子集、缺失 anchor、非法组合、零/极端 ATR、tick/qty、费用/滑点、最低金额、相同输入可复现。
 - **验收**：
   - 精确参数可追溯到 AI 选择的受控 anchor 与算法版本；
   - 无法物化时订单为 0；
@@ -787,13 +912,15 @@ flowchart TD
 
 - **目标**：绑定意图、物化、风险、执行、持有、复评和退出生命周期。
 - **依赖**：`P1-02`,`P3-02`,`P3-09`。
-- **验收**：每标的最多一个活动计划；所有 action 版本化并审计；AI 不能扩大已有计划风险。
+- **范围**：`P3-VS` 前持仓管理只要求 `HOLD`、`EXIT`、`every_primary_close` 和 `on_invalidation_risk`。
+- **验收**：每标的最多一个活动计划；所有 action 版本化并审计；AI 不能扩大已有计划风险；复杂分批减仓和策略家族迁移不阻塞 `P3-VS`。
 
 #### `P3-04` DeepSeek Strategy Intent Provider
 
 - **目标**：产生并严格验证 `StrategyIntent v2`。
-- **依赖**：`P1-02`,`P2-04`。
-- **任务**：DeepSeek-compatible client、Prompt/version、Schema/Serde/semantic validator、TTL、预算、usage 和真实 smoke。
+- **依赖**：`P1-02`,`P2-03`。
+- **任务**：使用冻结 Market Feature Snapshot fixtures 开发 DeepSeek-compatible client、Prompt/version、Schema/Serde/semantic validator、TTL、预算、usage 和真实 smoke；不得复制 Market Feature 或 Replay 逻辑。
+- **范围**：Provider Schema 可以描述未来枚举，但 `P3-VS` 前只允许 `strategy-space-v1-vs` 进入可执行链。
 - **测试**：空/截断/未知字段、非法策略组合、不存在 anchor、自由绝对价格/数量/杠杆注入、风险边界修改、持仓扩大风险、超时和预算竞争。
 - **验收**：非法输出产生 0 订单；usage 可核对；AI 具有实际策略选择字段；无新闻输入或新闻依赖。
 
@@ -807,39 +934,49 @@ flowchart TD
 
 - **目标**：在 Vertical Slice 前证明领域链可复现且无明显前视。
 - **依赖**：`P2-04`,`P3-02`,`P3-05`,`P3-09`。
-- **任务**：确定性时钟、固定 K 线、Strategy Intent Stub、同一 Materializer/Risk/TradePlan/Paper Execution、费用和基础滑点。
+- **任务**：确定性时钟、固定 K 线、`strategy-space-v1-vs` Strategy Intent Stub、同一 Materializer/Risk/TradePlan/Paper Execution、费用和基础滑点。
 - **验收**：相同输入产生相同交易账本；前缀不变；不调用实时 LLM；不要求独立回测引擎、完整绩效报告或新闻数据。
 
 #### `P3-06` AI 驱动现货 Paper Runtime
 
 - **目标**：运行 Market Features → Eligibility Event → AI Strategy Intent → Materialization → Risk → TradePlan → Paper → Review/Exit 主链。
-- **依赖**：`P3-04`,`P3-05`,`P3-09`,`P3-10A`。
+- **依赖**：`P3-04`,`P3-05`,`P3-09`。
 - **测试**：多标的并发、预算耗尽、数据陈旧、Intent 拒绝、Risk 拒绝、restart、持仓复评。
-- **验收**：未经合法 Intent 或 Risk 的 Paper 订单为 0；完整追溯率 100%；主链没有新闻节点。
+- **验收**：未经合法 Intent 或 Risk 的 Paper 订单为 0；完整追溯率 100%；主链没有新闻节点；可与 `P3-10A` 并行开发，但不能替代其历史正确性证据。
 
-#### `P3-07` Telegram 通知与只读查询
+#### `P3-07A` Telegram 通知与只读查询
 
 - **目标**：通知已确认事实并提供带时效的只读状态。
 - **依赖**：`P1-05`,`P3-03`。
-- **验收**：默认菜单仅包含状态、持仓、计划、近期交易、风险和 Emergency Close；通知失败不阻断交易主链且不丢审计。
+- **范围**：只负责已确认事件通知、状态/仓位/TradePlan/交易/风险查询、outbox 和脱敏，不实现紧急退出业务。
+- **验收**：通知失败不阻断交易主链且不丢审计；只读查询显示 `as_of` 和可信状态。
 
-#### `P3-08` Emergency Close 与受管现货退出
+#### `P3-08` Emergency Core
 
-- **目标**：在重复请求、中断和重启下安全降低全部受管 Paper 敞口。
-- **依赖**：`P3-01`,`P3-05`,`P3-07`。
-- **验收**：鉴权和二次确认；只作用于受管资产；每步可恢复；重复卖出效果为 0；完成后不自动恢复开仓。
+- **目标**：建立不依赖 Telegram 的统一 EmergencyController，在重复请求、中断和重启下安全降低全部受管 Paper 敞口。
+- **依赖**：`P3-01`,`P3-03`,`P3-05`。
+- **范围**：EmergencyAction 状态机、撤冲突订单、关闭受管敞口、幂等、步骤持久化、重启恢复和 CLI/loopback port。
+- **验收**：Telegram 不可用时仍可通过受保护入口执行；只作用于受管资产；每步可恢复；重复卖出效果为 0；完成后不自动恢复开仓。
+
+#### `P3-07B` Telegram Emergency Adapter
+
+- **目标**：把 Telegram `Emergency Close All` 作为统一 EmergencyController 的一个入口。
+- **依赖**：`P3-07A`,`P3-08`。
+- **范围**：用户/chat 白名单、nonce、TTL、二次确认、调用统一 Controller、展示进度和最终报告。
+- **验收**：Telegram Adapter 不包含独立撤单、卖出、幂等或恢复逻辑；默认菜单只额外暴露已鉴权的 Emergency Close。
 
 #### `P3-VS` AI Spot Paper Vertical Slice Gate
 
 - **目标**：证明核心产品链真实可运行，而不是只有模块和文档。
-- **依赖**：`P3-04`,`P3-05`,`P3-06`,`P3-07`,`P3-08`,`P3-09`,`P3-10A`。
-- **范围**：1–3 个 Spot 标的，真实公共行情，Paper 执行。
+- **依赖**：`P3-04`,`P3-05`,`P3-06`,`P3-07A`,`P3-07B`,`P3-08`,`P3-09`,`P3-10A`。
+- **范围**：1–3 个 Spot 标的，`strategy-space-v1-vs`，真实公共行情，Paper 执行。
 - **必须证据**：
   - 至少一条正常开仓到正常退出的可审计生命周期；
   - 至少一条 AI `NO_TRADE` 或 Risk `REJECTED` 生命周期；
   - 服务重启后恢复活动 TradePlan 且不重复入场；
   - Telegram 已确认结果通知；
   - Emergency Close 可安全收敛。
+- **资源证据**：在 2C2G 目标约束下记录基础 RSS、CPU、队列、SQLite 增长和 LLM 预算画像；不要求 30 天数据。
 - **不属于 Gate**：30 天 soak、72 小时 Testnet、完整 A/B/C、独立引擎、盈利证明、新闻 Provider。
 
 #### `P3-10B` Full Historical Strategy Evaluation
@@ -853,7 +990,7 @@ flowchart TD
 - **目标**：证明 Vertical Slice 能长期稳定、安全和可重复运行。
 - **依赖**：`P3-VS`。
 - **任务**：30 天 Paper soak、受控断连/重启/资源故障、数据库增长、预算和告警证据。
-- **验收**：满足第 12.3 节 Gate；不得用人工清账或删库重跑掩盖失败。
+- **验收**：满足第 12.3 节 Gate；在 2C2G 下记录 RSS 峰值/稳态、CPU 均值/峰值、队列峰值、数据库日增长、LLM 成本和预算行为；不得用人工清账或删库重跑掩盖失败。
 
 ### P4 — Testnet and Spot MVP Release
 
@@ -863,17 +1000,26 @@ flowchart TD
 - **依赖**：`P3-VS`,`P2-02`,`P3-01`。
 - **验收**：REST ack 不当作成交；重复事件效果为 0；断线后最终收敛。
 
-#### `P4-02` Bybit 现货 Testnet Execution
+#### `P4-02A` Testnet Protocol Smoke
 
-- **目标**：在无真实资金环境验证 Bybit 写协议。
-- **依赖**：`P4-01`,`P3-08`,`P3-10B`,`P3-11`。
+- **目标**：在不进行策略资格认证和长期稳定性测试的情况下，尽早验证 Bybit 写协议与私有状态同步。
+- **依赖**：`P3-VS`,`P4-01`,`P3-08`。
+- **范围**：极少量 Testnet Limit 下单/查询/撤单、必要的 Market 字段、`orderLinkId` 幂等、私有订单/成交事件、REST ack 与最终状态区分、基础 Emergency Close，以及重启后按 Testnet 事实对账。
 - **边界**：任何 Testnet 写调用仍需当时明确授权。
-- **验收**：所有订单按幂等键和交易所事实对账；未授权资产为 0；Emergency Close 可收敛。
+- **不属于本 Task**：72 小时稳定性、策略收益、30 天 Paper、完整 A/B/C、Testnet Release Gate 和真实资金授权。
+- **验收**：极小范围订单按幂等键和交易所事实对账；重复效果为 0；Emergency Close 基础协议路径可收敛。
+
+#### `P4-02B` Testnet Qualification
+
+- **目标**：在长期 Paper 和完整历史策略证据通过后，将已验证的 Testnet 协议链进入正式资格测试。
+- **依赖**：`P4-02A`,`P3-10B`,`P3-11`。
+- **边界**：不得把 Protocol Smoke 结果当作资格认证；任何 Testnet 写调用仍需当时明确授权。
+- **验收**：Long-running Paper 与 Historical Strategy Evidence Gate 已通过；资格测试配置、策略版本、协议差异和回滚边界全部冻结。
 
 #### `P4-03` Testnet 故障恢复与 72h 稳定性
 
 - **目标**：验证真实协议、私有流、恢复和资源边界。
-- **依赖**：`P4-02`。
+- **依赖**：`P4-02B`。
 - **验收**：连续 72 小时；关键 Failure Modes 有证据；未知订单最终安全收敛；无关键开放缺陷。
 
 #### `P4-04` Spot MVP Release Gate
@@ -920,6 +1066,8 @@ flowchart TD
 | 重启后重复入场 | 0 |
 | Emergency Close 重复卖出 | 0 |
 | 相同 Harness 输入账本 hash | 100% 一致 |
+| 可执行 Strategy Space | 仅 `strategy-space-v1-vs` |
+| 2C2G 基础资源画像 | RSS、CPU、队列、SQLite、LLM 预算记录完整 |
 | 新闻能力 | 不要求，且默认链中不存在 |
 
 ### 12.3 Long-running Paper Safety Gate
@@ -934,7 +1082,12 @@ flowchart TD
 | 数据不可信期间新开仓 | 0 |
 | 重启/断连后最终安全收敛 | 100% |
 | 关键审计缺口 | 0 |
-| 数据库增长 | 在 2C2G 与保留策略预算内 |
+| 运行资源 | 2 CPU / 2 GB RAM |
+| RSS | 峰值与稳态均已记录，超过 1400 MB 时按预定规则降级 |
+| CPU | 均值与异常峰值已记录并可解释 |
+| 队列 | 峰值不超过配置容量，饱和时无静默丢失 |
+| 数据库增长 | 日增长已记录且在 2C2G 与保留策略预算内 |
+| LLM 资源 | 并发、调用、Token 和成本均未突破第 6.4 节预算 |
 
 ### 12.4 Historical Strategy Evidence Gate
 
@@ -949,10 +1102,28 @@ flowchart TD
 
 收益为负或 AI 弱于 Rule-only 会阻止策略版本升级，但不会改写工程正确性结论。收益为正也不能豁免安全失败。
 
-### 12.5 Bybit Testnet Gate
+### 12.5 Testnet Protocol Smoke Gate
+
+此 Gate 只验证真实协议，不要求 `P3-10B` 或 30 天 Paper 先完成。
 
 | 指标 | 目标 |
 |---|---:|
+| 执行当时明确授权 | 已获得 |
+| Limit 下单/查询/撤单 | 与 Testnet 事实一致 |
+| `orderLinkId` 幂等 | 重复业务效果为 0 |
+| REST ack 与最终状态 | 明确分离并完成对账 |
+| 私有订单/成交事件 | 可接收、去重和恢复 |
+| 重启后 Testnet 对账 | 100% 安全收敛 |
+| Emergency Close 基础协议路径 | 达到明确终态 |
+| 真实资金操作 | 0 |
+
+Protocol Smoke 通过不代表策略合格、Testnet 稳定或允许进入真实资金。
+
+### 12.6 Bybit Testnet Qualification Gate
+
+| 指标 | 目标 |
+|---|---:|
+| Testnet Protocol Smoke Gate | 已通过 |
 | Long-running Paper Gate | 已通过 |
 | Historical Strategy Evidence Gate | 已通过 |
 | Testnet 连续运行 | ≥ 72 小时 |
@@ -961,7 +1132,7 @@ flowchart TD
 | Emergency Close 演练 | 20/20 达到明确终态 |
 | 未授权写操作 | 0 |
 
-### 12.6 Live Release Gate
+### 12.7 Live Release Gate
 
 真实资金不属于当前计划的自动下一阶段。必须重新立项、独立审批并明确：
 
@@ -1114,7 +1285,7 @@ Spot MVP 只有在以下条件同时成立时才完成：
 1. `P3-VS` 证明核心产品链存在；
 2. Long-running Paper Safety Gate 通过；
 3. Historical Strategy Evidence Gate 通过；
-4. Bybit Testnet Gate 通过；
+4. Bybit Testnet Qualification Gate 通过；
 5. `P4-04` 由独立审查确认。
 
 这不授权真实资金、永续合约、新闻能力或资金扩容。
