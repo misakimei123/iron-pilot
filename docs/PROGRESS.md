@@ -20,11 +20,12 @@
 ## Current Focus
 
 - Current phase: Phase A — Minimal Safety Kernel
-- In progress: P1-03
+- In progress: None
 - Ready:
   - P1-04
+  - P2-01
 - Blocked: None
-- Next recommended task: P1-03
+- Next recommended task: P1-04
 
 ## Task Status
 
@@ -35,10 +36,10 @@
 | `P0-03` | `DONE` | 2026-07-25 | 2026-07-25 | `98f87db43c9d8c23d563ce8df43d521ea434c924` | `docs/adr/0005-bounded-ai-strategy-authority.md`; ADR-0002/0003/0004 superseded/amended 标记；`CONTEXT.md`; 语义断言与 `git diff --check` | 未修改开发计划；未批准任何阶段 Gate |
 | `P1-01` | `DONE` | 2026-07-25 | 2026-07-25 | `705ca6f7b5aa4602072cc943295c15ae66bb780e` | Rust 质量门禁；空进程 smoke test；cargo-deny；Gitleaks；CI YAML 校验；零第三方 Cargo 依赖断言 | 无业务伪实现；未修改开发计划或批准 Gate |
 | `P1-02` | `DONE` | 2026-07-25 | 2026-07-25 | `a2d2f4a9ad2851cb9443606942f274e6fa16a914` | 精确 Decimal、稳定 ID、Instrument 与 Strategy Intent 契约测试；三组状态机属性测试；Rust 全门禁；cargo-deny；Gitleaks；无浮点领域类型断言 | 未修改开发计划；未批准任何阶段 Gate |
-| `P1-03` | `IN_PROGRESS` | 2026-07-25 | — | — | — | 正在实现严格 YAML/环境配置加载、启动校验和权限单调热加载 |
+| `P1-03` | `DONE` | 2026-07-25 | 2026-07-25 | `62cda475f2d5d7d447264ad916130b3e8cddce9d` | 严格 YAML/环境加载；环境指纹与版本校验；1–3 个 Spot 标的；2C2G 上限；权限单调热加载；33 项测试；cargo-deny；Gitleaks | 未修改开发计划；未批准任何阶段 Gate |
 | `P1-04` | `READY` | — | — | — | — | `P1-02` 已完成 |
 | `P1-05` | `PLANNED` | — | — | — | — | — |
-| `P2-01` | `PLANNED` | — | — | — | — | — |
+| `P2-01` | `READY` | — | — | — | — | `P1-03` 已完成 |
 | `P2-02` | `PLANNED` | — | — | — | — | — |
 | `P2-03` | `PLANNED` | — | — | — | — | — |
 | `P2-04` | `PLANNED` | — | — | — | — | — |
@@ -115,11 +116,18 @@ None.
 - 证据：`cargo fmt --all -- --check`；`cargo clippy --workspace --all-targets --locked -- -D warnings`；`cargo test --workspace --all-targets --locked`（领域契约 20 项全部通过）；`cargo build --workspace --all-targets --locked`；cargo-deny advisories/bans/licenses/sources 全部通过；Gitleaks 历史和工作区扫描通过；领域源码无 `f32`/`f64` 类型。
 - 已知限制：只冻结 `P3-VS` 前最小可执行策略空间和领域状态迁移，不包含配置、持久化、物化、风险或执行实现；不批准任何阶段 Gate。
 
+### P1-03 — 配置、多标的与启动校验
+
+- 结果：建立 `ironpilot-config-v1` 严格 YAML Schema、部署环境身份与指纹核对、版本绑定、1–3 个 Spot 标的和第 6.4 节全部 2C2G 上限；进程在配置通过前不初始化后续副作用，热加载只允许权限和资源单调收紧。
+- Commit：`62cda475f2d5d7d447264ad916130b3e8cddce9d`。
+- 证据：配置契约与进程测试 13 项、全工作区 33 项测试通过；`cargo fmt --all -- --check`；`cargo clippy --workspace --all-targets --locked -- -D warnings`；`cargo build --workspace --all-targets --locked`；cargo-deny advisories/bans/licenses/sources 全部通过；Gitleaks 历史和工作区扫描通过；`docs/DEVELOPMENT_PLAN.md` 零差异。
+- 已知限制：本 Task 只建立配置读取、验证和保守热加载合同，不实现持久化、运行时监督、交易所访问、Risk 或 Execution；不批准任何阶段 Gate。
+
 ## Next Action
 
-Execute P1-03 next.
+Execute P1-04 next.
 
-P1-04 is also READY and may proceed independently; P1-05 remains PLANNED.
+P2-01 is also READY and may proceed independently; P1-05 remains PLANNED until P1-04 is DONE.
 
 以上内容是依据 `docs/DEVELOPMENT_PLAN.md` 静态依赖生成的进度建议，不改变任何 Task 依赖。
 
