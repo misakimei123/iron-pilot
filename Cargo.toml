@@ -1,0 +1,22 @@
+[workspace]
+members = [
+    "crates/ironpilot",
+    "crates/ironpilot-adapters",
+    "crates/ironpilot-application",
+    "crates/ironpilot-domain",
+]
+default-members = ["crates/ironpilot"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+publish = false
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+unused_must_use = "deny"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }

@@ -20,9 +20,8 @@
 ## Current Focus
 
 - Current phase: Phase A — Minimal Safety Kernel
-- In progress: None
-- Ready:
-  - P1-01
+- In progress: P1-01
+- Ready: None
 - Blocked: None
 - Next recommended task: P1-01
 
@@ -33,7 +32,7 @@
 | `P0-01` | `DONE` | — | 2026-07-24 | `edb5f861d2377b1ee9e95da934acffd226f1f938` | `CONTEXT.md`; `docs/adr/0001-spot-first-mvp.md` 至 `0004-compositional-historical-backtesting.md` | 历史架构基线 |
 | `P0-02` | `DONE` | — | 2026-07-24 | `033de133b42ce9a66b126fd8376fdd60b5b34a77` | `docs/DEVELOPMENT_PLAN.md` v2 重建及后续一致性修订 | 仅完成规划治理，未实施业务 Task |
 | `P0-03` | `DONE` | 2026-07-25 | 2026-07-25 | `98f87db43c9d8c23d563ce8df43d521ea434c924` | `docs/adr/0005-bounded-ai-strategy-authority.md`; ADR-0002/0003/0004 superseded/amended 标记；`CONTEXT.md`; 语义断言与 `git diff --check` | 未修改开发计划；未批准任何阶段 Gate |
-| `P1-01` | `READY` | — | — | — | — | 可独立执行；本次未开始 |
+| `P1-01` | `IN_PROGRESS` | 2026-07-25 | — | — | — | 正在建立 Rust 工程骨架、固定工具链与质量门禁 |
 | `P1-02` | `PLANNED` | — | — | — | — | — |
 | `P1-03` | `PLANNED` | — | — | — | — | — |
 | `P1-04` | `PLANNED` | — | — | — | — | — |
