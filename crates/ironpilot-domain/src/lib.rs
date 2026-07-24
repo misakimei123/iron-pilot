@@ -1,6 +1,30 @@
-//! Pure domain boundary.
+//! Pure IronPilot domain types and invariants.
 //!
-//! P1-02 owns the first domain types and state machines. This crate intentionally
-//! contains no placeholder trading behavior.
+//! This crate has no HTTP, database, exchange, LLM, or runtime dependencies.
 
 #![forbid(unsafe_code)]
+
+mod decimal;
+mod ids;
+mod instrument;
+mod state;
+mod strategy;
+
+pub use decimal::{DomainDecimal, ParseDomainDecimalError};
+pub use ids::{
+    DecisionId, EligibilityEventId, FillId, OrderId, OrderIntentId, ParseStableIdError,
+    RiskDecisionId, SnapshotId, TradePlanActionId, TradePlanId,
+};
+pub use instrument::{
+    Exchange, InstrumentId, InstrumentType, ParseInstrumentIdError, Symbol,
+    ValidationError as InstrumentValidationError,
+};
+pub use state::{InvalidTransition, OrderState, SystemState, TradePlanState};
+pub use strategy::{
+    BufferTier, EntryAnchor, EntryConfirmation, EntryPolicy, EntryPolicyType,
+    InvalidationCondition, MinimumRiskReward, OpenPositionDecision, PositionReviewDecision,
+    ReviewPolicy, RiskTier, SchemaVersion, StopAnchor, StopPolicy, StopPolicyType, StrategyAction,
+    StrategyDecision, StrategyFamily, StrategyIntent, StrategySpaceVersion,
+    StrategyValidationError, TargetPolicy, TargetPolicyType, TrailingAnchor,
+    ValidatedStrategyIntent,
+};

@@ -20,9 +20,8 @@
 ## Current Focus
 
 - Current phase: Phase A — Minimal Safety Kernel
-- In progress: None
-- Ready:
-  - P1-02
+- In progress: P1-02
+- Ready: None
 - Blocked: None
 - Next recommended task: P1-02
 
@@ -34,7 +33,7 @@
 | `P0-02` | `DONE` | — | 2026-07-24 | `033de133b42ce9a66b126fd8376fdd60b5b34a77` | `docs/DEVELOPMENT_PLAN.md` v2 重建及后续一致性修订 | 仅完成规划治理，未实施业务 Task |
 | `P0-03` | `DONE` | 2026-07-25 | 2026-07-25 | `98f87db43c9d8c23d563ce8df43d521ea434c924` | `docs/adr/0005-bounded-ai-strategy-authority.md`; ADR-0002/0003/0004 superseded/amended 标记；`CONTEXT.md`; 语义断言与 `git diff --check` | 未修改开发计划；未批准任何阶段 Gate |
 | `P1-01` | `DONE` | 2026-07-25 | 2026-07-25 | `705ca6f7b5aa4602072cc943295c15ae66bb780e` | Rust 质量门禁；空进程 smoke test；cargo-deny；Gitleaks；CI YAML 校验；零第三方 Cargo 依赖断言 | 无业务伪实现；未修改开发计划或批准 Gate |
-| `P1-02` | `READY` | — | — | — | — | `P0-03` 与 `P1-01` 已完成 |
+| `P1-02` | `IN_PROGRESS` | 2026-07-25 | — | — | — | 正在实现纯领域类型、Strategy Intent 与 fail-closed 状态机 |
 | `P1-03` | `PLANNED` | — | — | — | — | — |
 | `P1-04` | `PLANNED` | — | — | — | — | — |
 | `P1-05` | `PLANNED` | — | — | — | — | — |

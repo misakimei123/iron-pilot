@@ -3,14 +3,21 @@
 This document records dependencies introduced by `P1-01`. It does not authorize
 future dependencies or redefine task scope.
 
-## Runtime dependencies
+## Cargo dependencies
 
-The Cargo workspace has no third-party runtime, build, or development
-dependencies. All four workspace crates currently use only the Rust standard
-library and contain no optional or default Cargo features.
+Direct dependencies are owned by the task and crate that require them. Default
+features are disabled; only the listed features are enabled.
 
-Any future direct Cargo dependency must be added only by the task that needs it
-and must record:
+| Dependency | Pin | Scope / owner | Purpose | License | Maintenance status | Features / resource impact | Exit plan |
+|---|---|---|---|---|---|---|---|
+| `rust_decimal` | `1.42.1` | Runtime / `ironpilot-domain` | Exact decimal values for all domain amounts | MIT | Maintained upstream | `std`; bounded CPU and 16-byte value representation | Replace with an audited fixed-scale integer type while preserving string wire encoding |
+| `serde` | `1.0.229` | Runtime / `ironpilot-domain` | Closed, explicit domain wire contracts | Apache-2.0 / MIT | Maintained upstream | `derive`, `std`; compile-time derive cost, no I/O or permissions | Replace derives with reviewed manual codecs if the wire layer changes |
+| `uuid` | `1.24.0` | Runtime / `ironpilot-domain` | Typed stable identifiers | Apache-2.0 / MIT | Maintained upstream | `serde`, `std`; generation features are disabled, no randomness or I/O | Replace with an internal 16-byte identifier while preserving canonical UUID text |
+| `proptest` | `1.11.0` | Development / `ironpilot-domain` | Property tests for state-machine fail-closed behavior | Apache-2.0 / MIT | Maintained upstream | `std`; test-only CPU and memory, no production binary impact | Replace with exhaustive transition tables plus deterministic fuzz tests |
+| `serde_json` | `1.0.151` | Development / `ironpilot-domain` | JSON contract and unknown-field rejection tests | Apache-2.0 / MIT | Maintained upstream | `std`; test-only allocation, no production binary impact | Replace with `serde_test` or reviewed fixture decoding |
+
+The lockfile pins the resolved transitive graph. Any future direct Cargo
+dependency must be added only by the task that needs it and must record:
 
 - the concrete requirement and owning module;
 - license and source;
@@ -18,6 +25,10 @@ and must record:
 - disabled default features and the exact enabled feature set;
 - resource impact;
 - replacement or removal plan.
+
+The global default-feature ban remains enabled. `deny.toml` contains exact,
+version-pinned exceptions only for `serde_derive`'s proc-macro default feature
+and the test-only Unicode parser feature set pulled in by `proptest`.
 
 ## Workspace boundaries
 

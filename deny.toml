@@ -36,6 +36,31 @@ deny = []
 skip = []
 skip-tree = []
 
+# `serde`'s derive feature necessarily activates the proc-macro crate's empty
+# default feature. Keep the allowance version-pinned and exact.
+[[bans.features]]
+crate = "serde_derive@1.0.229"
+allow = ["default"]
+exact = true
+
+# `proptest`'s `std` feature activates regex-syntax's documented default Unicode
+# parser set. This is test-only and the exact list prevents silent feature drift.
+[[bans.features]]
+crate = "regex-syntax@0.8.11"
+allow = [
+    "default",
+    "std",
+    "unicode",
+    "unicode-age",
+    "unicode-bool",
+    "unicode-case",
+    "unicode-gencat",
+    "unicode-perl",
+    "unicode-script",
+    "unicode-segment",
+]
+exact = true
+
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
