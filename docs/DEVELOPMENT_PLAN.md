@@ -2,7 +2,7 @@
 
 > 文档状态：`AUTHORITATIVE`
 >
-> 版本：`3.0.0`
+> 版本：`3.1.0`
 >
 > 日期：2026-07-25
 >
@@ -54,11 +54,12 @@ Task 完成不等于 Gate 自动通过。Codex 不得自行批准阶段 Gate，�
 
 1. 确认直接依赖、范围和 v3 权限边界。
 2. 冻结最小接口、不可变量、失败语义和资源上限。
-3. 做最小充分实现，不顺手扩展平台能力。
-4. 执行本 Task 的窄范围验收与全仓质量门禁。
-5. 记录测试、审计或运行证据。
-6. 只在 `docs/PROGRESS.md` 更新动态状态、实施提交、证据和限制。
-7. 外部写操作、Testnet 写调用和阶段 Gate 仍需独立授权。
+3. 先评估成熟、流行、持续维护且许可证兼容的开源库；优先复用通用协议与基础设施，只自行实现 IronPilot 领域语义和必要扩展。
+4. 做最小充分实现，不顺手扩展平台能力。
+5. 执行本 Task 的窄范围验收与全仓质量门禁。
+6. 记录测试、审计或运行证据。
+7. 只在 `docs/PROGRESS.md` 更新动态状态、实施提交、证据和限制。
+8. 外部写操作、Testnet 写调用和阶段 Gate 仍需独立授权。
 
 ### 0.4 默认冻结与计划变更控制
 
@@ -81,6 +82,7 @@ Task 完成不等于 Gate 自动通过。Codex 不得自行批准阶段 Gate，�
 | `1.0.0—1.3.0` | 2026-07-24 | 历史 Spot-first、确定性参数、新闻守卫和组合式回测基线 |
 | `2.0.0—2.2.0` | 2026-07-24 | 建立有界 AI Strategy Space、Materializer、Risk、Vertical Slice 优先路线和动态进度分离 |
 | `3.0.0` | 2026-07-25 | 恢复 AI 主导交易初衷；取消活动链中的 Strategy Space 白名单、确定性 Materializer 和后置策略型 Risk Engine；AI 直接输出精确完整交易方案；新增只校验不改写的执行合法性与用户授权边界；重建 P3 Task、依赖图、正文和 Gate |
+| `3.1.0` | 2026-07-25 | 建立开源优先、领域边界自有的工程原则；P3-04 优先采用成熟 OpenAI-compatible Rust 库承载通用客户端与协议能力；同步 Task 正文、质量 Gate 和工程重量限制；Task 表、依赖图、阶段顺序、AI 权限边界和 ADR 词汇不变 |
 
 ---
 
@@ -802,9 +804,9 @@ flowchart TD
 #### `P3-04` DeepSeek AI Trading Plan Provider
 
 - **目标**：让 AI 独立产生完整 `AITradingPlan v3`。
-- **任务**：Prompt、client、raw response、strict parse、usage/cost/latency、一次有界 replan。
+- **任务**：Prompt、基于成熟 OpenAI-compatible Rust 库的 client、raw response、strict parse、usage/cost/latency、一次有界 replan；通用 HTTP、认证、请求/响应协议和中间件不得无理由重复实现，DeepSeek 特有字段通过库支持的扩展类型或 BYOT 能力接入。
 - **测试**：精确订单、止损/止盈、多动作、空/截断/未知字段、超时、预算、拒绝反馈重规划。
-- **验收**：真实输出不依赖 Strategy Space 或 Materializer；AI 未输出计划时订单为 0；Prompt 同时包含原始行情、派生指标、账户和授权。
+- **验收**：真实输出不依赖 Strategy Space 或 Materializer；AI 未输出计划时订单为 0；Prompt 同时包含原始行情、派生指标、账户和授权；复用库的隐藏重试必须关闭或显式纳入调用预算、费用、延迟与原始证据。
 
 #### `P3-13` Execution Validation 与 User Authorization
 
@@ -897,6 +899,7 @@ flowchart TD
 | 重复业务订单效果 | 0 |
 | AI Context → Plan → Validation → Order 追溯率 | 100% |
 | 交易所状态未知时同目的盲目补单 | 0 |
+| 未记录例外而自研已有成熟开源实现的通用协议基础设施 | 0 |
 
 ### 12.2 Prototype Vertical Slice Gate
 
@@ -987,6 +990,13 @@ flowchart TD
 - 本地改写 AI Plan 检测；
 - Rule-only 只作离线参考。
 
+### 13.5 依赖复用与供应链
+
+- 每个新增通用基础设施实现先记录候选开源库比较，包括维护活跃度、社区采用、许可证、安全、资源重量、可审计性和边界适配；
+- 版本锁定并执行格式、静态检查、测试、`cargo deny check` 和依赖来源审计；
+- Provider SDK 的自动重试、遥测或请求改写必须显式配置并纳入调用预算和审计证据；
+- 只有在成熟库缺失必要能力、无法满足安全/证据语义或引入重量明显不合算时才允许自研，并在 `docs/PROGRESS.md` 记录理由、边界和测试证据。
+
 ---
 
 ## 14. 最大风险与反方校验
@@ -1026,6 +1036,10 @@ flowchart TD
 
 - 保持模块化单体和 SQLite。
 - 不因 AI 主导引入 Agent 工具、MCP 执行、通用 DSL 或多模型平台。
+- 开源优先不是无条件增加依赖：优先选择成熟、流行、持续维护、许可证兼容且边界清晰的最小库，避免引入覆盖面远大于当前 Task 的框架。
+- HTTP、TLS、WebSocket、序列化、标准 Provider 协议、数据库、迁移、指标和重试等通用基础设施，原则上复用成熟开源库，不重复造轮子。
+- 自有代码聚焦 IronPilot 领域合同、AI 权限边界、Prompt、严格解析、预算、证据、幂等、恢复和 Provider 必要扩展。
+- 开源库不得隐藏改变语义：自动重试、默认超时、请求改写、数据外发和遥测必须可关闭、可配置、可审计。
 - Context 和 Prompt 有明确字节/Token 上限。
 - 原始 K 线序列有固定窗口。
 - 拒绝后最多一次 replan。
