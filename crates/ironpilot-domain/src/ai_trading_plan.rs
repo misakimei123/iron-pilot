@@ -44,6 +44,21 @@ pub enum AiTradingAction {
     Exit,
 }
 
+impl AiTradingAction {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::OpenLong => "OPEN_LONG",
+            Self::NoTrade => "NO_TRADE",
+            Self::Hold => "HOLD",
+            Self::CancelEntry => "CANCEL_ENTRY",
+            Self::ModifyProtection => "MODIFY_PROTECTION",
+            Self::Reduce => "REDUCE",
+            Self::Exit => "EXIT",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum AiOrderType {

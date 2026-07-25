@@ -6,6 +6,7 @@
 
 mod ai_trading_plan;
 mod decimal;
+mod decision_context;
 mod ids;
 mod instrument;
 mod market;
@@ -21,9 +22,15 @@ pub use ai_trading_plan::{
     MAX_PLAN_RISKS, MAX_PLAN_TEXT_LENGTH, MAX_TAKE_PROFITS,
 };
 pub use decimal::{DomainDecimal, ParseDomainDecimalError};
+pub use decision_context::{
+    AccountOrderFact, AccountOrderSide, AccountOrderStatus, AiDecisionContext,
+    AiDecisionContextHash, AiRawResponse, AiRawResponseHash, AiTradePlanLedgerEntry,
+    DecisionContextError, MAX_CONTEXT_MANAGED_POSITIONS, MAX_CONTEXT_OPEN_ORDERS,
+    MAX_PROVIDER_LABEL_LENGTH, MAX_RAW_AI_RESPONSE_BYTES, TradePlanLedgerDisposition,
+};
 pub use ids::{
-    AiDecisionContextId, AiTradingPlanId, AuditEntryId, CorrelationId, DecisionId,
-    EligibilityEventId, FillId, ManagedLotId, OrderId, OrderIntentId, OutboxMessageId,
+    AiDecisionContextId, AiProviderResponseId, AiTradingPlanId, AuditEntryId, CorrelationId,
+    DecisionId, EligibilityEventId, FillId, ManagedLotId, OrderId, OrderIntentId, OutboxMessageId,
     ParseStableIdError, ReconciliationRunId, RuntimeInstanceId, SnapshotId, TradePlanActionId,
     TradePlanId,
 };

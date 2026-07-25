@@ -6,9 +6,10 @@ use ironpilot_application::{
     AuditEntry, OutboxMessage, PersistedSystemState, SystemStateChange, UnixMillis,
 };
 use ironpilot_domain::{
-    AssetCode, DomainDecimal, InstrumentId, ManagedPosition, PortfolioFill, PortfolioFillSide,
-    PortfolioReconciliationStatus, PortfolioSnapshot, ReconciliationRunId, RuntimeInstanceId,
-    SystemState,
+    AI_DECISION_CONTEXT_SCHEMA_VERSION_V1, AiDecisionContext, AiRawResponse,
+    AiTradePlanLedgerEntry, AssetCode, DomainDecimal, InstrumentId, ManagedPosition, PortfolioFill,
+    PortfolioFillSide, PortfolioReconciliationStatus, PortfolioSnapshot, ReconciliationRunId,
+    RuntimeInstanceId, SystemState, TradePlanActionId, TradePlanLedgerDisposition,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -479,6 +480,204 @@ impl SqliteRepository {
         Ok(PersistenceEffect::Applied)
     }
 
+    pub async fn persist_ai_trade_plan_ledger(
+        &self,
+        owner_id: RuntimeInstanceId,
+        entry: &AiTradePlanLedgerEntry,
+        audit: &AuditEntry,
+    ) -> Result<PersistenceEffect, StorageError> {
+        let recorded_at = domain_timestamp(entry.recorded_at_unix_millis())?;
+        if audit.occurred_at().get() != recorded_at {
+            return Err(StorageError::AtomicTimestampMismatch);
+        }
+        let _write_guard = self.write_gate.lock().await;
+        let mut transaction = self.pool.begin().await?;
+        ensure_instance_lease(&mut transaction, owner_id, recorded_at).await?;
+        ensure_ai_context(&mut transaction, entry.context()).await?;
+        ensure_ai_response(&mut transaction, entry.response()).await?;
+
+        let plan = entry.plan();
+        let plan_payload = plan.to_json();
+        let plan_insert = sqlx::query(
+            "
+            INSERT INTO ai_trading_plans(
+                ai_plan_id, context_id, response_id, schema_version, instrument_id,
+                action, created_at, valid_until, plan_hash, payload_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(ai_plan_id) DO NOTHING
+            ",
+        )
+        .bind(plan.plan_id().to_string())
+        .bind(plan.context_id().to_string())
+        .bind(entry.response().response_id().to_string())
+        .bind(plan.schema_version())
+        .bind(plan.instrument_id().to_string())
+        .bind(plan.action().as_str())
+        .bind(recorded_at)
+        .bind(domain_timestamp(plan.valid_until_unix_millis())?)
+        .bind(plan.plan_hash().to_string())
+        .bind(&plan_payload)
+        .execute(&mut *transaction)
+        .await?;
+        if plan_insert.rows_affected() == 0 {
+            ensure_existing_ai_ledger_matches(&mut transaction, entry).await?;
+            transaction.commit().await?;
+            return Ok(PersistenceEffect::DuplicateNoEffect);
+        }
+
+        let trace_payload = entry.trace_json().to_string();
+        match entry.disposition() {
+            TradePlanLedgerDisposition::Create { initial_state } => {
+                if initial_state == ironpilot_domain::TradePlanState::Proposed {
+                    let existing: Option<String> = sqlx::query_scalar(
+                        "
+                        SELECT trade_plan_id
+                        FROM trade_plans
+                        WHERE instrument_id = ?
+                          AND state NOT IN ('REJECTED', 'CANCELLED', 'CLOSED')
+                        LIMIT 1
+                        ",
+                    )
+                    .bind(plan.instrument_id().to_string())
+                    .fetch_optional(&mut *transaction)
+                    .await?;
+                    if let Some(existing_trade_plan_id) = existing {
+                        return Err(StorageError::ActiveTradePlanExists {
+                            instrument_id: plan.instrument_id().to_string().into_boxed_str(),
+                            trade_plan_id: existing_trade_plan_id.into_boxed_str(),
+                        });
+                    }
+                }
+                sqlx::query(
+                    "
+                    INSERT INTO trade_plans(
+                        trade_plan_id, instrument_id, state, created_at, updated_at, payload_json
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    ",
+                )
+                .bind(entry.trade_plan_id().to_string())
+                .bind(plan.instrument_id().to_string())
+                .bind(initial_state.as_str())
+                .bind(recorded_at)
+                .bind(recorded_at)
+                .bind(&trace_payload)
+                .execute(&mut *transaction)
+                .await?;
+            }
+            TradePlanLedgerDisposition::AppendToExisting => {
+                let target: Option<(String, String)> = sqlx::query_as(
+                    "
+                    SELECT instrument_id, state
+                    FROM trade_plans
+                    WHERE trade_plan_id = ?
+                    ",
+                )
+                .bind(entry.trade_plan_id().to_string())
+                .fetch_optional(&mut *transaction)
+                .await?;
+                let Some((instrument_id, state)) = target else {
+                    return Err(StorageError::TargetTradePlanUnavailable {
+                        trade_plan_id: entry.trade_plan_id().to_string().into_boxed_str(),
+                    });
+                };
+                if instrument_id != plan.instrument_id().to_string()
+                    || matches!(state.as_str(), "REJECTED" | "CANCELLED" | "CLOSED")
+                {
+                    return Err(StorageError::TargetTradePlanUnavailable {
+                        trade_plan_id: entry.trade_plan_id().to_string().into_boxed_str(),
+                    });
+                }
+            }
+        }
+
+        sqlx::query(
+            "
+            INSERT INTO trade_plan_actions(
+                action_id, trade_plan_id, action_type, state, created_at, expires_at, payload_json
+            )
+            VALUES (?, ?, ?, 'RECORDED', ?, ?, ?)
+            ",
+        )
+        .bind(entry.action_id().to_string())
+        .bind(entry.trade_plan_id().to_string())
+        .bind(plan.action().as_str())
+        .bind(recorded_at)
+        .bind(domain_timestamp(plan.valid_until_unix_millis())?)
+        .bind(&trace_payload)
+        .execute(&mut *transaction)
+        .await?;
+
+        sqlx::query(
+            "
+            INSERT INTO ai_trade_plan_ledger(
+                action_id, trade_plan_id, context_id, response_id, ai_plan_id,
+                context_hash, response_hash, plan_hash, recorded_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ",
+        )
+        .bind(entry.action_id().to_string())
+        .bind(entry.trade_plan_id().to_string())
+        .bind(entry.context().context_id().to_string())
+        .bind(entry.response().response_id().to_string())
+        .bind(plan.plan_id().to_string())
+        .bind(entry.context().context_hash().to_string())
+        .bind(entry.response().response_hash().to_string())
+        .bind(plan.plan_hash().to_string())
+        .bind(recorded_at)
+        .execute(&mut *transaction)
+        .await?;
+
+        insert_audit(&mut transaction, audit).await?;
+        transaction.commit().await?;
+        Ok(PersistenceEffect::Applied)
+    }
+
+    pub async fn ai_trade_plan_trace(
+        &self,
+        action_id: TradePlanActionId,
+    ) -> Result<Option<AiTradePlanTraceRow>, StorageError> {
+        let row = sqlx::query(
+            "
+            SELECT
+                ledger.action_id,
+                ledger.trade_plan_id,
+                ledger.context_id,
+                ledger.response_id,
+                ledger.ai_plan_id,
+                ledger.context_hash,
+                ledger.response_hash,
+                ledger.plan_hash,
+                ledger.recorded_at,
+                plans.action
+            FROM ai_trade_plan_ledger AS ledger
+            JOIN ai_trading_plans AS plans ON plans.ai_plan_id = ledger.ai_plan_id
+            WHERE ledger.action_id = ?
+            ",
+        )
+        .bind(action_id.to_string())
+        .fetch_optional(&self.pool)
+        .await?;
+        row.map(|row| {
+            Ok(AiTradePlanTraceRow {
+                action_id: row.try_get("action_id")?,
+                trade_plan_id: row.try_get("trade_plan_id")?,
+                context_id: row.try_get("context_id")?,
+                response_id: row.try_get("response_id")?,
+                ai_plan_id: row.try_get("ai_plan_id")?,
+                context_hash: row.try_get("context_hash")?,
+                response_hash: row.try_get("response_hash")?,
+                plan_hash: row.try_get("plan_hash")?,
+                action: row.try_get("action")?,
+                recorded_at: UnixMillis::new(row.try_get("recorded_at")?)
+                    .map_err(|_| StorageError::InvalidStoredTimestamp)?,
+            })
+        })
+        .transpose()
+    }
+
     pub async fn backup_to(&self, destination: impl AsRef<Path>) -> Result<(), StorageError> {
         let destination = destination.as_ref();
         if destination.as_os_str().is_empty() || destination == self.database_path {
@@ -550,6 +749,181 @@ async fn ensure_instance_lease(
         return Err(StorageError::InstanceLeaseNotHeld);
     }
     Ok(())
+}
+
+async fn ensure_ai_context(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    context: &AiDecisionContext,
+) -> Result<(), StorageError> {
+    let as_of = domain_timestamp(context.as_of_unix_millis())?;
+    let valid_until = domain_timestamp(context.valid_until_unix_millis())?;
+    let insert = sqlx::query(
+        "
+        INSERT INTO ai_decision_contexts(
+            context_id, schema_version, instrument_id, as_of, valid_until,
+            maximum_loss_quote, context_hash, payload_json
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(context_id) DO NOTHING
+        ",
+    )
+    .bind(context.context_id().to_string())
+    .bind(AI_DECISION_CONTEXT_SCHEMA_VERSION_V1)
+    .bind(context.instrument_id().to_string())
+    .bind(as_of)
+    .bind(valid_until)
+    .bind(context.maximum_loss_quote().to_string())
+    .bind(context.context_hash().to_string())
+    .bind(context.to_json())
+    .execute(&mut **transaction)
+    .await?;
+    if insert.rows_affected() == 0 {
+        let existing: (String, String, i64, i64, String, String, String) = sqlx::query_as(
+            "
+            SELECT schema_version, instrument_id, as_of, valid_until,
+                   maximum_loss_quote, context_hash, payload_json
+            FROM ai_decision_contexts
+            WHERE context_id = ?
+            ",
+        )
+        .bind(context.context_id().to_string())
+        .fetch_one(&mut **transaction)
+        .await?;
+        if existing
+            != (
+                AI_DECISION_CONTEXT_SCHEMA_VERSION_V1.to_owned(),
+                context.instrument_id().to_string(),
+                as_of,
+                valid_until,
+                context.maximum_loss_quote().to_string(),
+                context.context_hash().to_string(),
+                context.to_json().to_owned(),
+            )
+        {
+            return Err(StorageError::IdempotencyConflict);
+        }
+    }
+    Ok(())
+}
+
+async fn ensure_ai_response(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    response: &AiRawResponse,
+) -> Result<(), StorageError> {
+    let received_at = domain_timestamp(response.received_at_unix_millis())?;
+    let insert = sqlx::query(
+        "
+        INSERT INTO ai_provider_responses(
+            response_id, context_id, provider, model, received_at, response_hash, raw_response
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(response_id) DO NOTHING
+        ",
+    )
+    .bind(response.response_id().to_string())
+    .bind(response.context_id().to_string())
+    .bind(response.provider())
+    .bind(response.model())
+    .bind(received_at)
+    .bind(response.response_hash().to_string())
+    .bind(response.raw_response())
+    .execute(&mut **transaction)
+    .await?;
+    if insert.rows_affected() == 0 {
+        let existing: (String, String, String, i64, String, String) = sqlx::query_as(
+            "
+            SELECT context_id, provider, model, received_at, response_hash, raw_response
+            FROM ai_provider_responses
+            WHERE response_id = ?
+            ",
+        )
+        .bind(response.response_id().to_string())
+        .fetch_one(&mut **transaction)
+        .await?;
+        if existing
+            != (
+                response.context_id().to_string(),
+                response.provider().to_owned(),
+                response.model().to_owned(),
+                received_at,
+                response.response_hash().to_string(),
+                response.raw_response().to_owned(),
+            )
+        {
+            return Err(StorageError::IdempotencyConflict);
+        }
+    }
+    Ok(())
+}
+
+async fn ensure_existing_ai_ledger_matches(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    entry: &AiTradePlanLedgerEntry,
+) -> Result<(), StorageError> {
+    let plan = entry.plan();
+    let existing: (
+        String,
+        String,
+        String,
+        String,
+        String,
+        i64,
+        i64,
+        String,
+        String,
+        String,
+        String,
+    ) = sqlx::query_as(
+        "
+        SELECT
+            plans.context_id,
+            plans.response_id,
+            plans.schema_version,
+            plans.instrument_id,
+            plans.action,
+            plans.created_at,
+            plans.valid_until,
+            plans.plan_hash,
+            plans.payload_json,
+            ledger.trade_plan_id,
+            ledger.action_id
+        FROM ai_trading_plans AS plans
+        JOIN ai_trade_plan_ledger AS ledger ON ledger.ai_plan_id = plans.ai_plan_id
+        WHERE plans.ai_plan_id = ?
+        ",
+    )
+    .bind(plan.plan_id().to_string())
+    .fetch_one(&mut **transaction)
+    .await
+    .map_err(|error| {
+        if matches!(error, sqlx::Error::RowNotFound) {
+            StorageError::IdempotencyConflict
+        } else {
+            StorageError::Sqlx(error)
+        }
+    })?;
+    if existing
+        != (
+            plan.context_id().to_string(),
+            entry.response().response_id().to_string(),
+            plan.schema_version().to_owned(),
+            plan.instrument_id().to_string(),
+            plan.action().as_str().to_owned(),
+            domain_timestamp(entry.recorded_at_unix_millis())?,
+            domain_timestamp(plan.valid_until_unix_millis())?,
+            plan.plan_hash().to_string(),
+            plan.to_json(),
+            entry.trade_plan_id().to_string(),
+            entry.action_id().to_string(),
+        )
+    {
+        return Err(StorageError::IdempotencyConflict);
+    }
+    Ok(())
+}
+
+fn domain_timestamp(value: u64) -> Result<i64, StorageError> {
+    i64::try_from(value).map_err(|_| StorageError::InvalidStoredTimestamp)
 }
 
 async fn insert_managed_lot(
@@ -928,6 +1302,20 @@ pub struct PendingOutboxRow {
     pub attempts: i64,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AiTradePlanTraceRow {
+    pub action_id: String,
+    pub trade_plan_id: String,
+    pub context_id: String,
+    pub response_id: String,
+    pub ai_plan_id: String,
+    pub context_hash: String,
+    pub response_hash: String,
+    pub plan_hash: String,
+    pub action: String,
+    pub recorded_at: UnixMillis,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PersistenceEffect {
     Applied,
@@ -1016,6 +1404,13 @@ pub enum StorageError {
     ManagedAssetMismatch,
     InsufficientManagedQuantity,
     PortfolioArithmeticOverflow,
+    ActiveTradePlanExists {
+        instrument_id: Box<str>,
+        trade_plan_id: Box<str>,
+    },
+    TargetTradePlanUnavailable {
+        trade_plan_id: Box<str>,
+    },
     Portfolio(ironpilot_domain::PortfolioError),
 }
 
@@ -1083,6 +1478,17 @@ impl fmt::Display for StorageError {
             Self::PortfolioArithmeticOverflow => {
                 formatter.write_str("portfolio persistence arithmetic overflowed")
             }
+            Self::ActiveTradePlanExists {
+                instrument_id,
+                trade_plan_id,
+            } => write!(
+                formatter,
+                "instrument {instrument_id} already has active TradePlan {trade_plan_id}"
+            ),
+            Self::TargetTradePlanUnavailable { trade_plan_id } => write!(
+                formatter,
+                "target TradePlan {trade_plan_id} is missing, terminal, or belongs to another instrument"
+            ),
             Self::Portfolio(error) => error.fmt(formatter),
         }
     }
@@ -1131,15 +1537,21 @@ mod tests {
     use super::{LeaseAcquireError, PersistenceEffect, SqliteRepository, StorageError};
     use ironpilot_application::{AuditEntry, OutboxMessage, SystemStateChange, UnixMillis};
     use ironpilot_domain::{
-        AssetCode, AuditEntryId, DomainDecimal, ExchangeAssetBalance, FillId, InstrumentId,
-        InstrumentTradingStatus, LocalAssetBalance, ManagedLotId, OrderId, OutboxMessageId,
-        PortfolioFill, PortfolioFillSide, PortfolioReconciler, ReconciliationRunId,
-        RuntimeInstanceId, SpotInstrumentRules, SystemState, TradePlanId,
+        AccountOrderFact, AccountOrderSide, AccountOrderStatus, AiDecisionContext,
+        AiDecisionContextId, AiOrderType, AiProviderResponseId, AiRawResponse,
+        AiTradePlanLedgerEntry, AiTradingPlan, AiTradingPlanId, AssetCode, AuditEntryId,
+        ClosedCandle, DomainDecimal, ExchangeAssetBalance, ExchangeServerTime,
+        FEATURE_CANDLE_WINDOW, FillId, InstrumentId, InstrumentRulesSnapshot,
+        InstrumentTradingStatus, LocalAssetBalance, ManagedLotId, MarketDataSource,
+        MarketFeatureEngine, MarketTimeframe, OrderId, OutboxMessageId, PortfolioFill,
+        PortfolioFillSide, PortfolioReconciler, ReconciliationRunId, RulesHash, RuntimeInstanceId,
+        SpotInstrumentRules, SystemState, TopOfBook, TradePlanActionId, TradePlanId,
         validated_spot_instrument_rules,
     };
     use serde_json::json;
 
     static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+    const AI_END_AT: i64 = 1_800_000_000_000;
 
     #[tokio::test]
     async fn migrations_enable_wal_and_create_only_the_planned_storage_kernel() {
@@ -1165,6 +1577,10 @@ mod tests {
         assert_eq!(
             table_names,
             vec![
+                "ai_decision_contexts",
+                "ai_provider_responses",
+                "ai_trade_plan_ledger",
+                "ai_trading_plans",
                 "audit_log",
                 "eligibility_events",
                 "emergency_actions",
@@ -1236,6 +1652,206 @@ mod tests {
         .await
         .expect("legacy retirement triggers should be readable");
         assert_eq!(trigger_count, 9);
+
+        fixture.close().await;
+    }
+
+    #[tokio::test]
+    async fn ai_context_response_plan_and_actions_are_atomic_traceable_and_idempotent() {
+        let fixture = Fixture::new().await;
+        let owner = runtime_id(700);
+        fixture
+            .repository
+            .acquire_instance_lease(
+                owner,
+                timestamp(AI_END_AT),
+                std::time::Duration::from_secs(60),
+            )
+            .await
+            .expect("runtime lease should be acquired");
+
+        let trade_plan_id = trade_plan_id(700);
+        let open = ai_ledger_entry(700, "OPEN_LONG", trade_plan_id);
+        let open_audit = ai_ledger_audit(&open, 700);
+        assert_eq!(
+            fixture
+                .repository
+                .persist_ai_trade_plan_ledger(owner, &open, &open_audit)
+                .await
+                .expect("OPEN_LONG ledger should persist"),
+            PersistenceEffect::Applied
+        );
+
+        let hold = ai_ledger_entry(710, "HOLD", trade_plan_id);
+        let hold_audit = ai_ledger_audit(&hold, 710);
+        assert_eq!(
+            fixture
+                .repository
+                .persist_ai_trade_plan_ledger(owner, &hold, &hold_audit)
+                .await
+                .expect("HOLD ledger should append"),
+            PersistenceEffect::Applied
+        );
+        assert_eq!(
+            fixture
+                .repository
+                .persist_ai_trade_plan_ledger(owner, &hold, &hold_audit)
+                .await
+                .expect("same ledger append should be idempotent"),
+            PersistenceEffect::DuplicateNoEffect
+        );
+
+        let trace = fixture
+            .repository
+            .ai_trade_plan_trace(hold.action_id())
+            .await
+            .expect("trace query should succeed")
+            .expect("trace must exist");
+        assert_eq!(trace.action_id, hold.action_id().to_string());
+        assert_eq!(trace.trade_plan_id, trade_plan_id.to_string());
+        assert_eq!(trace.context_id, hold.context().context_id().to_string());
+        assert_eq!(trace.response_id, hold.response().response_id().to_string());
+        assert_eq!(trace.ai_plan_id, hold.plan().plan_id().to_string());
+        assert_eq!(
+            trace.context_hash,
+            hold.context().context_hash().to_string()
+        );
+        assert_eq!(
+            trace.response_hash,
+            hold.response().response_hash().to_string()
+        );
+        assert_eq!(trace.plan_hash, hold.plan().plan_hash().to_string());
+        assert_eq!(trace.action, "HOLD");
+
+        for (table, expected) in [
+            ("ai_decision_contexts", 2),
+            ("ai_provider_responses", 2),
+            ("ai_trading_plans", 2),
+            ("ai_trade_plan_ledger", 2),
+            ("trade_plans", 1),
+            ("trade_plan_actions", 2),
+            ("audit_log", 2),
+        ] {
+            assert_eq!(
+                ai_table_count(&fixture.repository, table).await,
+                expected,
+                "unexpected row count for {table}"
+            );
+        }
+
+        fixture.close().await;
+    }
+
+    #[tokio::test]
+    async fn second_active_plan_is_rejected_and_all_candidate_rows_roll_back() {
+        let fixture = Fixture::new().await;
+        let owner = runtime_id(720);
+        fixture
+            .repository
+            .acquire_instance_lease(
+                owner,
+                timestamp(AI_END_AT),
+                std::time::Duration::from_secs(60),
+            )
+            .await
+            .expect("runtime lease should be acquired");
+
+        let first = ai_ledger_entry(720, "OPEN_LONG", trade_plan_id(720));
+        fixture
+            .repository
+            .persist_ai_trade_plan_ledger(owner, &first, &ai_ledger_audit(&first, 720))
+            .await
+            .expect("first active plan should persist");
+
+        let second = ai_ledger_entry(730, "OPEN_LONG", trade_plan_id(730));
+        assert!(matches!(
+            fixture
+                .repository
+                .persist_ai_trade_plan_ledger(owner, &second, &ai_ledger_audit(&second, 730))
+                .await,
+            Err(StorageError::ActiveTradePlanExists { .. })
+        ));
+        assert_eq!(ai_table_count(&fixture.repository, "trade_plans").await, 1);
+        assert_eq!(
+            ai_table_count(&fixture.repository, "ai_decision_contexts").await,
+            1
+        );
+        assert_eq!(
+            ai_table_count(&fixture.repository, "ai_provider_responses").await,
+            1
+        );
+        assert_eq!(
+            ai_table_count(&fixture.repository, "ai_trading_plans").await,
+            1
+        );
+        assert!(
+            fixture
+                .repository
+                .ai_trade_plan_trace(second.action_id())
+                .await
+                .expect("trace query should succeed")
+                .is_none()
+        );
+
+        fixture.close().await;
+    }
+
+    #[tokio::test]
+    async fn audit_failure_rolls_back_the_complete_ai_ledger_transaction() {
+        let fixture = Fixture::new().await;
+        let owner = runtime_id(740);
+        fixture
+            .repository
+            .acquire_instance_lease(
+                owner,
+                timestamp(AI_END_AT),
+                std::time::Duration::from_secs(60),
+            )
+            .await
+            .expect("runtime lease should be acquired");
+
+        let first = ai_ledger_entry(740, "NO_TRADE", trade_plan_id(740));
+        let first_audit = ai_ledger_audit(&first, 740);
+        fixture
+            .repository
+            .persist_ai_trade_plan_ledger(owner, &first, &first_audit)
+            .await
+            .expect("first ledger should persist");
+
+        let second = ai_ledger_entry(750, "NO_TRADE", trade_plan_id(750));
+        let duplicate_audit = AuditEntry::new(
+            first_audit.id(),
+            timestamp(
+                i64::try_from(second.recorded_at_unix_millis()).expect("test timestamp fits i64"),
+            ),
+            "AI_TRADE_PLAN_RECORDED",
+            Some(second.plan().plan_id().to_string()),
+            second.trace_json(),
+        )
+        .expect("audit fixture is valid");
+        assert!(
+            fixture
+                .repository
+                .persist_ai_trade_plan_ledger(owner, &second, &duplicate_audit)
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            ai_table_count(&fixture.repository, "ai_decision_contexts").await,
+            1
+        );
+        assert_eq!(
+            ai_table_count(&fixture.repository, "ai_trade_plan_ledger").await,
+            1
+        );
+        assert!(
+            fixture
+                .repository
+                .ai_trade_plan_trace(second.action_id())
+                .await
+                .expect("trace query should succeed")
+                .is_none()
+        );
 
         fixture.close().await;
     }
@@ -1861,6 +2477,232 @@ mod tests {
             json!({"fill_id": fill.fill_id().to_string()}),
         )
         .expect("portfolio audit should be valid")
+    }
+
+    fn ai_ledger_entry(
+        sequence: u128,
+        action: &str,
+        trade_plan_id: TradePlanId,
+    ) -> AiTradePlanLedgerEntry {
+        let end_at = u64::try_from(AI_END_AT).expect("test timestamp fits u64");
+        let as_of = end_at + 1_000;
+        let primary = ai_candles(MarketTimeframe::FifteenMinutes, end_at);
+        let confirmation = ai_candles(MarketTimeframe::OneHour, end_at);
+        let book = TopOfBook::new(
+            instrument(),
+            end_at,
+            end_at + 500,
+            decimal("218.9"),
+            decimal("10"),
+            decimal("219.1"),
+            decimal("12"),
+        )
+        .expect("AI context book is valid");
+        let features = MarketFeatureEngine::compute(
+            &primary,
+            &confirmation,
+            &book,
+            as_of,
+            MarketDataSource::WebSocketLive,
+        )
+        .expect("AI context features are valid");
+        let rules_snapshot = InstrumentRulesSnapshot::new(
+            vec![rules()],
+            ExchangeServerTime::new(end_at / 1_000, end_at * 1_000_000, end_at)
+                .expect("exchange server time is valid"),
+            end_at,
+            end_at + 60_000,
+            RulesHash::from_sha256([9; 32]),
+        )
+        .expect("AI context rules snapshot is valid");
+        let portfolio = PortfolioReconciler::reconcile(
+            vec![
+                ExchangeAssetBalance::new(asset("BTC"), decimal("0.5"), decimal("0"))
+                    .expect("BTC balance is valid"),
+                ExchangeAssetBalance::new(asset("USDT"), decimal("1000"), decimal("0"))
+                    .expect("USDT balance is valid"),
+            ],
+            vec![
+                LocalAssetBalance::new(asset("BTC"), decimal("0.5"), decimal("0.4"))
+                    .expect("BTC local balance is valid"),
+                LocalAssetBalance::new(asset("USDT"), decimal("1000"), decimal("0"))
+                    .expect("USDT local balance is valid"),
+            ],
+            end_at,
+        )
+        .expect("AI context portfolio is valid");
+        let context_id = AiDecisionContextId::from_str(&uuid_text(sequence + 10_000))
+            .expect("context ID is valid");
+        let context = AiDecisionContext::new(
+            context_id,
+            as_of,
+            primary,
+            confirmation,
+            book,
+            features,
+            &rules_snapshot,
+            &portfolio,
+            vec![
+                ironpilot_domain::ManagedPosition::new(instrument(), asset("BTC"), decimal("0.4"))
+                    .expect("managed position is valid"),
+            ],
+            vec![
+                AccountOrderFact::new(
+                    format!("exchange-{sequence}"),
+                    Some(format!("ironpilot-{sequence}")),
+                    instrument(),
+                    AccountOrderSide::Buy,
+                    AiOrderType::Limit,
+                    Some(decimal("210")),
+                    decimal("0.10"),
+                    decimal("0"),
+                    AccountOrderStatus::New,
+                    end_at,
+                )
+                .expect("account order is valid"),
+            ],
+            decimal("25.00"),
+        )
+        .expect("AI Decision Context is valid");
+        let ai_plan_id =
+            AiTradingPlanId::from_str(&uuid_text(sequence + 11_000)).expect("AI plan ID is valid");
+        let plan_value = match action {
+            "OPEN_LONG" => json!({
+                "schema_version": "3.0",
+                "plan_id": ai_plan_id.to_string(),
+                "context_id": context_id.to_string(),
+                "instrument_id": instrument().to_string(),
+                "action": "OPEN_LONG",
+                "valid_until": end_at + 20_000,
+                "order": {
+                    "type": "LIMIT",
+                    "quantity": "0.10",
+                    "limit_price": "210.00",
+                    "time_in_force": "GTC",
+                    "expires_at": end_at + 20_000,
+                    "max_slippage_quote": "1.00"
+                },
+                "protective_stop": {
+                    "trigger_price": "200.00",
+                    "order_type": "MARKET"
+                },
+                "take_profits": [{"price": "230.00", "quantity": "0.10"}],
+                "declared_max_loss_quote": "2.00",
+                "review": {
+                    "next_review_at": end_at + 10_000,
+                    "max_holding_until": end_at + 100_000
+                },
+                "confidence": "0.70",
+                "thesis": "Complete facts support this AI-selected entry.",
+                "invalidation": "Exit if subsequent facts invalidate the thesis.",
+                "risks": ["The market can reverse."]
+            }),
+            "NO_TRADE" => json!({
+                "schema_version": "3.0",
+                "plan_id": ai_plan_id.to_string(),
+                "context_id": context_id.to_string(),
+                "instrument_id": instrument().to_string(),
+                "action": "NO_TRADE",
+                "valid_until": end_at + 20_000,
+                "confidence": "0.60",
+                "thesis": "The AI elects not to trade these complete facts.",
+                "invalidation": "Re-evaluate when new market or account facts arrive.",
+                "risks": []
+            }),
+            "HOLD" => json!({
+                "schema_version": "3.0",
+                "plan_id": ai_plan_id.to_string(),
+                "context_id": context_id.to_string(),
+                "instrument_id": instrument().to_string(),
+                "action": "HOLD",
+                "target_trade_plan_id": trade_plan_id.to_string(),
+                "valid_until": end_at + 20_000,
+                "review": {
+                    "next_review_at": end_at + 10_000,
+                    "max_holding_until": end_at + 100_000
+                },
+                "confidence": "0.65",
+                "thesis": "The AI elects to hold after reviewing the complete facts.",
+                "invalidation": "Exit if subsequent facts invalidate the thesis.",
+                "risks": ["The existing position can lose value."]
+            }),
+            _ => panic!("unsupported AI ledger test action"),
+        };
+        let plan =
+            AiTradingPlan::from_json(&plan_value.to_string()).expect("AI plan fixture is valid");
+        let response = AiRawResponse::new(
+            AiProviderResponseId::from_str(&uuid_text(sequence + 12_000))
+                .expect("response ID is valid"),
+            context_id,
+            "deepseek",
+            "deepseek-chat",
+            end_at + 2_000,
+            plan.to_json(),
+        )
+        .expect("raw response fixture is valid");
+        AiTradePlanLedgerEntry::new(
+            context,
+            response,
+            plan,
+            trade_plan_id,
+            TradePlanActionId::from_str(&uuid_text(sequence + 13_000)).expect("action ID is valid"),
+            end_at + 3_000,
+        )
+        .expect("AI ledger fixture is valid")
+    }
+
+    fn ai_candles(timeframe: MarketTimeframe, end_at: u64) -> Vec<ClosedCandle> {
+        let duration = timeframe.duration_millis();
+        let first_open =
+            end_at - duration * u64::try_from(FEATURE_CANDLE_WINDOW).expect("window fits u64");
+        (0..FEATURE_CANDLE_WINDOW)
+            .map(|index| {
+                let price = 100 + i64::try_from(index).expect("index fits i64");
+                ClosedCandle::new(
+                    instrument(),
+                    timeframe,
+                    first_open + duration * u64::try_from(index).expect("index fits u64"),
+                    decimal(&price.to_string()),
+                    decimal(&(price + 1).to_string()),
+                    decimal(&(price - 1).to_string()),
+                    decimal(&price.to_string()),
+                    decimal("10"),
+                    decimal(&(price * 10).to_string()),
+                    true,
+                )
+                .expect("AI context candle is valid")
+            })
+            .collect()
+    }
+
+    fn ai_ledger_audit(entry: &AiTradePlanLedgerEntry, sequence: u128) -> AuditEntry {
+        AuditEntry::new(
+            audit_id(sequence + 20_000),
+            timestamp(
+                i64::try_from(entry.recorded_at_unix_millis()).expect("test timestamp fits i64"),
+            ),
+            "AI_TRADE_PLAN_RECORDED",
+            Some(entry.plan().plan_id().to_string()),
+            entry.trace_json(),
+        )
+        .expect("AI ledger audit is valid")
+    }
+
+    async fn ai_table_count(repository: &SqliteRepository, table: &str) -> i64 {
+        let query = match table {
+            "ai_decision_contexts" => "SELECT COUNT(*) FROM ai_decision_contexts",
+            "ai_provider_responses" => "SELECT COUNT(*) FROM ai_provider_responses",
+            "ai_trading_plans" => "SELECT COUNT(*) FROM ai_trading_plans",
+            "ai_trade_plan_ledger" => "SELECT COUNT(*) FROM ai_trade_plan_ledger",
+            "trade_plans" => "SELECT COUNT(*) FROM trade_plans",
+            "trade_plan_actions" => "SELECT COUNT(*) FROM trade_plan_actions",
+            "audit_log" => "SELECT COUNT(*) FROM audit_log",
+            _ => panic!("AI test table must be explicitly allowed"),
+        };
+        sqlx::query_scalar(query)
+            .fetch_one(repository.pool())
+            .await
+            .expect("AI table count should be readable")
     }
 
     async fn seed_order(repository: &SqliteRepository, fill: &PortfolioFill, sequence: u128) {

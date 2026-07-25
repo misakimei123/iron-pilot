@@ -121,6 +121,21 @@ impl TradePlanState {
     }
 
     #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Proposed => "PROPOSED",
+            Self::Accepted => "ACCEPTED",
+            Self::EntryPending => "ENTRY_PENDING",
+            Self::Active => "ACTIVE",
+            Self::ExitPending => "EXIT_PENDING",
+            Self::RecoveryRequired => "RECOVERY_REQUIRED",
+            Self::Rejected => "REJECTED",
+            Self::Cancelled => "CANCELLED",
+            Self::Closed => "CLOSED",
+        }
+    }
+
+    #[must_use]
     pub const fn is_terminal(self) -> bool {
         matches!(self, Self::Rejected | Self::Cancelled | Self::Closed)
     }
