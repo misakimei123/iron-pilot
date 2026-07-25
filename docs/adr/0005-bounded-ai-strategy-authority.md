@@ -1,6 +1,7 @@
 ---
-status: accepted
+status: superseded
 date: 2026-07-25
+superseded-by: 0006-ai-dominant-trading-authority
 supersedes:
   - 0002-deterministic-trade-parameters-and-news-guard
 amends:
@@ -8,7 +9,9 @@ amends:
   - 0004-compositional-historical-backtesting
 ---
 
-# 采用有界 AI 策略权限
+# 采用有界 AI 策略权限（已取代）
+
+本 ADR 已被 [ADR-0006](0006-ai-dominant-trading-authority.md) 取代，不再是当前实现依据。以下内容只保留为 v2 决策历史。
 
 IronPilot 采用有界 AI 策略权限：
 

@@ -1,5 +1,7 @@
 # IronPilot AI 策略权限修订方案
 
+> 历史 v2 文档。已被 DEVELOPMENT_PLAN v3 和 ADR-0006 取代。下文的 Strategy Space、Materializer 和后置 Risk Engine 要求不适用于 v3 活动交易链。
+
 > 文档状态：`PROPOSED_CHANGE_SPEC`
 >
 > 日期：2026-07-24

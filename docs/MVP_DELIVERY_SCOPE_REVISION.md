@@ -1,5 +1,7 @@
 # IronPilot MVP 交付范围与纵向闭环优先修订
 
+> 历史 v2 文档。与 DEVELOPMENT_PLAN v3 或 ADR-0006 冲突的 Materializer、Risk 依赖和有界 AI 权限内容不再有效。
+
 > 文档状态：`PROPOSED_CHANGE_SPEC`
 >
 > 日期：2026-07-24

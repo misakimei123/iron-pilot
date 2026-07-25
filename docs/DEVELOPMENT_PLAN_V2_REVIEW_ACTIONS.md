@@ -1,5 +1,7 @@
 # IronPilot DEVELOPMENT_PLAN v2 审阅修订清单
 
+> 历史 v2 审阅记录，不治理 v3 AI 主导 Task 图、合同或 Gate。
+
 > 文档状态：`REVIEW_ACTIONS`
 >
 > 日期：2026-07-24

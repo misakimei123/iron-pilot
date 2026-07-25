@@ -1,5 +1,9 @@
 # Deterministic Risk Engine v1
 
+> Superseded implementation evidence: DEVELOPMENT_PLAN v3 and ADR-0006 remove
+> this v2 Risk Engine from the active trading path. Keep this document and its
+> commit as historical evidence only. `P3-12` owns safe code/schema retirement.
+
 `P3-02` implements the pure-domain `ironpilot-risk-rules-v1` contract. This
 document records the implemented interface and evidence; it does not amend
 `docs/DEVELOPMENT_PLAN.md`, redefine task dependencies, or approve a phase gate.

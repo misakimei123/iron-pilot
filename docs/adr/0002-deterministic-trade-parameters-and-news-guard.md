@@ -7,6 +7,8 @@ superseded-by: 0005-bounded-ai-strategy-authority
 
 本 ADR 的原始业务链把本地规则作为交易候选选择器，把结构化新闻守卫作为调用 LLM 的前置门禁，并把 LLM 限定为对本地交易方案进行语义判断。该职责划分已被 [ADR-0005](0005-bounded-ai-strategy-authority.md) 取代，不再是当前实现依据。
 
+ADR-0005 后续又被 [ADR-0006](0006-ai-dominant-trading-authority.md) 取代。下文“精确参数由 Materializer 产生”和“Risk Engine 必经”等内容也只属于历史，不是 v3 实现依据。
+
 被取代的范围包括：
 
 - 由本地规则预先决定“交易候选”或方向；

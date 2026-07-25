@@ -1,109 +1,116 @@
 # IronPilot 领域词汇
 
-IronPilot 是受确定性权限、风险边界和状态一致性约束的自动交易系统。本词汇表统一后续计划、代码、测试和审计记录中的业务语言。
+IronPilot 是 AI 主导交易、确定性事实与可靠执行相结合的自治交易系统。本词汇表统一计划、代码、测试和审计语言；权限边界以 `docs/DEVELOPMENT_PLAN.md` v3 和 ADR-0006 为准。
 
 ## 核心交易语言
 
-**受限自治交易系统（Constrained Autonomous Trading System）**:
-在预先授权的交易范围内自动产生并执行交易，但任何动作都必须服从确定性风控、状态机和审计约束的系统。
-_Avoid_: 自主交易员、无限自治 Agent
+**AI 主导交易系统（AI-Dominant Trading System）**:
+AI 基于完整市场、账户、订单和用户授权上下文，独立形成包含精确 entry、quantity、stop、take-profit 和管理动作的交易方案；本地系统只验证、持久化、执行、恢复和审计，不替 AI 设计或改写交易。
+_Avoid_: AI 辅助传统策略、AI 审核器、有界策略模板选择器
 
 **交易标的（Instrument）**:
-由交易所、产品类型、交易符号和结算属性共同确定的可交易对象；相同 `symbol` 的现货和永续合约是不同交易标的。
-_Avoid_: 币种、交易对（用于泛指不同产品时）
+由交易所、产品类型、交易符号和结算属性共同确定的可交易对象；相同 `symbol` 的现货和永续是不同标的。
+_Avoid_: 币种、泛化交易对
 
-**策略意图（Strategy Intent）**:
-AI 针对一个交易标的和不可变市场上下文，在版本化 Strategy Space 内选择的结构化策略；它具有有界策略权限，但没有风险覆盖或执行权限。`Candidate Decision` 是历史术语，不用于当前运行时合同。
-_Avoid_: AI 指令、最终执行决策、Candidate Decision
+**AI 决策上下文（AI Decision Context）**:
+一次 AI 决策使用的不可变、版本化事实集合，至少包含有界原始 15m/1h OHLCV、当前价格/盘口、Market Features、K 线形态、instrument rules、余额、受管资产、持仓、订单、最近成交、用户最大亏损授权、时间和执行反馈。
+_Avoid_: 指标信号、策略候选、只含 RSI/EMA 的摘要 Prompt
 
-**Vertical Slice 策略空间（`strategy-space-v1-vs`）**:
-`P3-VS` 前唯一可进入 DeepSeek 真实输出校验、Materializer、Risk Engine、TradePlan、Paper Runtime 和 Minimal Historical Harness 的可执行 Strategy Space 版本。完整 `StrategyIntent v2` Schema 中的未来枚举只是协议边界参考；后续能力必须发布新版本，不得静默扩展本版本。
-_Avoid_: `strategy-space-v1`（作为 P3-VS 运行时版本）、完整 Schema 等于当前可执行集合
+**AI 完整交易方案（`AITradingPlan v3`）**:
+AI 对一个不可变 Context 输出的结构化完整交易决定。开仓方案包含精确 order type、entry、quantity、stop、take-profit、滑点、有效期和管理计划；持仓方案可以是 HOLD、CANCEL_ENTRY、MODIFY_PROTECTION、REDUCE 或 EXIT。
+_Avoid_: Strategy Intent、Candidate Decision、AI 建议、AI 仓位建议
 
-**资格与事件预筛（Eligibility / Event Prefilter）**:
-只判断市场数据、事件、系统状态、去重、冷却和 LLM 预算是否允许发起一次 AI 策略决策；可以生成受控事件，但不能决定交易方向、策略家族、入场、止损、目标或退出政策。`Rule Prefilter` 是历史术语，不用于当前运行时合同。
-_Avoid_: 规则候选生成器、有效做多机会、Rule Prefilter
+**交易决策权（Trading-Decision Authority）**:
+是否交易以及正常交易方向、精确价格、数量、保护和退出方案的决定权。v3 中该权力属于 AI；本地组件不能生成、优化或重写这些字段。
+_Avoid_: 有界策略选择权、Risk 审批权、Materializer 参数权
 
-**风险裁决（Risk Decision）**:
-确定性 Risk Engine 对已验证 Strategy Intent、物化参数和当前账户状态作出的约束结果，可批准、拒绝、向下调整或触发受限状态；它不能替换 AI 策略或扩大风险。
-_Avoid_: 风险建议、AI 风控
-
-**新闻能力（当前非目标）**:
-当前默认业务链没有 `NewsRiskGuard`、新闻 Provider、新闻 Prompt 输入或 `disabled` 占位节点，也不声称具备新闻风险保护。未来引入任何新闻门禁前，必须先修订开发计划和相关 ADR，冻结权限、失败语义、数据合同、回放证据与 Gate。
-_Avoid_: 默认新闻门禁、黑天鹅探测器、新闻交易策略、新闻 AI 审批器
+**决策触发（Decision Trigger）**:
+仅决定何时构建 Context 并调用 AI。触发可基于 K 线闭合、信息增量、订单/成交变化或复评到期，但不能认定“有效机会”、决定方向或过滤与本地观点不一致的合法行情。
+_Avoid_: Rule Prefilter、交易信号、机会筛选器
 
 **市场特征快照（Market Feature Snapshot）**:
-针对一个交易标的和一个 K 线周期，由连续已闭合市场数据确定性生成并带版本、时效和来源证据的一组数值与受控语义观察。
-_Avoid_: 实时信号、AI 行情结论、跨周期指标包
+由连续已闭合数据确定性生成、带版本和来源证据的 RSI、EMA、ATR、ADX、Donchian、成交量、关键位置与形态观察。它是 AI 的辅助事实，不是交易指令。
+_Avoid_: 买卖信号、策略输出
 
-**关键位置（Key Location）**:
-由版本化市场结构规则识别的支撑、阻力或无关键位置状态；它是形态过滤条件，不是模型主观绘制的价位。
-_Avoid_: AI 支撑位、主观压力位
+**原始行情上下文（Raw Market Context）**:
+提供给 AI 的有界已闭合 OHLCV 序列、当前价格与盘口。它与派生指标同时提供，避免传统指标摘要限制 AI 判断。
 
-**形态观察（Pattern Observation）**:
-只在合法关键位置由确定性规则识别的可选 K 线形态及其受控语义；它本身没有开仓、平仓或反转权限。
-_Avoid_: K 线信号、形态指令、必然反转
+**用户最大亏损授权（User Maximum Loss Authorization）**:
+用户或部署配置允许单笔 AI 方案承担的最大 quote 资产亏损金额。它是硬账户授权，不是本地策略判断；超限方案整体拒绝，禁止本地缩量或移动止损。
+_Avoid_: Risk Tier、AI 可修改风险预算、仅写在 Prompt 的建议值
 
-**确定性策略物化（Deterministic Strategy Materialization）**:
-把已验证 Strategy Intent 中由 AI 选择的 strategy family、anchor、entry/stop/target policy 和 risk tier，结合不可变市场快照、组合状态、风险配置与交易所约束，版本化地转换为精确候选价格、数量和订单参数。物化器可以拒绝或收紧，但不能替换策略或在失败时另选交易。
-_Avoid_: 第二策略引擎、规则交易方案生成器、Trade Parameters Calculator（作为领域职责）
+**执行校验（Execution Validation）**:
+对 AI 原始计划执行 Schema、时效、Spot、Bybit rules、余额、受管资产、订单冲突、最大亏损、权限、幂等和状态检查。结果只有 ACCEPT 或 REJECT；不得修改 AI 计划。
+_Avoid_: Risk Engine、策略审批、ADJUST_DOWN、自动参数修复
 
-**物化交易参数（Materialized Trade Parameters）**:
-确定性策略物化的候选输出，仍须经过 Risk Engine 审批、持久化 TradePlan 和 Execution Preflight 才能产生业务副作用。代码模块可暂时保留 `trade_parameters` 名称，但该名称不授予策略选择权。
-_Avoid_: AI 仓位建议、AI 止损价格、最终执行指令
+**忠实执行（Faithful Execution）**:
+TradePlan 和 Adapter 对已接受 AI 方案进行持久化、协议翻译、提交、查询、恢复和对账，交易语义与 AI 原始计划逐字段一致。
+_Avoid_: 本地优化、自动止盈止损、执行层策略
 
 **交易计划（TradePlan）**:
-一次交易意图从候选、审批、入场、持仓管理到关闭与复盘的持久化业务实体。
-_Avoid_: 信号、订单（订单只是 TradePlan 的执行记录）
+AI 原始交易方案从校验、订单、成交、持仓管理到关闭的持久化业务实体。它保存 AI 方案，不重新设计方案。
+_Avoid_: 本地策略、信号、订单别名
+
+**执行拒绝反馈（Validation Rejection Feedback）**:
+Validator 对非法、陈旧、超授权或协议不兼容 AI 方案形成的结构化原因。Provider 最多按配置进行一次有界 replan；本地不能代替 AI 修复。
+
+**持仓复评（AI Position Review）**:
+把最新行情、账户、订单、成交、保护单和原始计划重新交给 AI，由 AI 决定 HOLD、修改保护、减仓或退出。
+_Avoid_: 本地 trailing、固定复评策略、自动盈亏平衡
+
+**风险停机（System Halt）**:
+因数据、状态、授权或基础设施不可信而禁止新动作的系统状态。它保护执行可靠性，不拥有交易策略权。
+_Avoid_: Risk Engine 策略裁决
 
 **受管资产（Managed Asset）**:
-能够通过 IronPilot 的 TradePlan、订单和成交审计链证明归属的现货数量。
+能够通过 IronPilot 的 AI TradePlan、订单和成交审计链证明归属的现货数量。
 _Avoid_: 子账户全部余额、可见余额
 
-**历史策略回测（Historical Strategy Backtest）**:
-在冻结的历史行情与不可变 manifest 上，复用 IronPilot 的 Market Features、Eligibility/Event Prefilter、录制 Strategy Intent 或确定性决策桩、Strategy Materialization、Risk、TradePlan 和 Paper Execution 语义，生成可复现交易账本、权益曲线和绩效证据的离线过程。当前合同不要求新闻数据。
-_Avoid_: 历史回放、Paper Trading、盈利证明
+**交易所外部事实（Exchange External Truth）**:
+Bybit 的订单、成交、余额和持仓是外部事实；本地数据库是 AI 原始计划、审计和恢复源。REST ack 不等于成交。
 
-**独立回测参考（Independent Backtest Reference）**:
-使用与 IronPilot 不同的成熟开源实现，对冻结策略子集做离线交叉计算，以暴露指标、成交、费用和绩效语义漂移；它既不是无误的真值，也不参与生产运行。
-_Avoid_: Oracle、生产回测器、第二订单权威
-
-## 状态与安全语言
-
-**可信状态（Trusted State）**:
-本地订单、成交、余额和持仓与交易所真实状态完成对账，且行情、时钟和连接满足新开仓门槛的系统状态。
-_Avoid_: 服务在线、WebSocket 已连接
-
-**只减仓（Reduce Only）**:
-系统只允许降低已有风险敞口，不允许创建或扩大任何敞口的运行约束。
-_Avoid_: 暂停（暂停可能禁止一切交易）
-
-**风险停机（Risk Halt）**:
-因确定性风险阈值或状态不可信而禁止新开仓，并要求完成恢复检查后才能解除的系统状态。
-_Avoid_: 临时错误、自动重试状态
+**业务幂等（Business Idempotency）**:
+通过稳定 Plan/Action/Order ID、持久化、查询确认和状态机保证重复请求不产生重复业务效果。
+_Avoid_: 网络 exactly-once 承诺
 
 **紧急退出（Emergency Exit）**:
-入口 Adapter 完成自身认证和用户确认并构造 `AuthorizedEmergencyCommand` 后，由统一 EmergencyController 禁止新开仓、撤销冲突订单、按交易所真实状态降低受管敞口并最终对账的幂等流程。
-_Avoid_: 撤销全部订单、卖出全部余额
+独立于 AI 和 Telegram 可用性的用户授权安全路径，只撤销可证明归属的订单并降低或关闭受管敞口；不授予本地正常策略权。
 
-**已授权紧急命令（Authorized Emergency Command）**:
-Telegram、受保护 CLI 或 loopback 管理 API 在完成入口身份验证、权限检查、防重放与确认后构造的统一命令；至少携带请求、主体、来源、范围、认证/确认凭据引用和有效期语义。Emergency Core 仍验证 TTL、业务幂等和请求范围。
-_Avoid_: Telegram callback、未经确认的 EmergencyAction、平台特定消息 DTO
+## 历史与证据语言
 
-**紧急控制器（EmergencyController）**:
-不依赖 Telegram、Bot Token、入口白名单、nonce 或交互状态的统一领域/应用服务；负责稳定 EmergencyActionId、业务幂等、受管资产边界、撤单/降敞口、持久化、恢复、审计和最终结果。所有入口调用同一 Controller。
-_Avoid_: Telegram Emergency Service、CLI 专用退出逻辑、按入口复制紧急业务
+**市场回放（Market Replay）**:
+复现相同历史输入、时钟、Market Features 和 Decision Context 输入，不计算策略 PnL，也不调用实时 LLM。
 
-## 交付语言
+**最小历史闭环（Minimal Historical Harness）**:
+使用录制 `AITradingPlan v3` 或确定性 AI Plan Stub，复用 Execution Validation、TradePlan 和 Paper Execution，证明无前视和账本可复现。活动链没有 Materializer 或 Risk Engine。
 
-**现货 MVP（Spot MVP）**:
-以 AI 驱动的多标的现货闭环为范围，完成历史回放、历史策略回测、实时 Paper Trading、Testnet Protocol Smoke、Testnet Qualification Setup、72 小时 Stability and Recovery，并通过 Bybit Testnet Qualification Gate；不包含真实资金和永续合约。
-_Avoid_: 完整产品、实盘版本
+**历史策略评估（Historical Strategy Evaluation）**:
+在冻结 manifest 上评估录制 AI Plan 的收益、回撤、成本、样本外和压力证据。Rule-only 仅为离线对照，不进入生产链。
 
-**Testnet Qualification Setup**:
-`P4-02B` 在 Protocol Smoke、Long-running Paper 和 Historical Strategy Evidence Gate 通过后冻结资格测试配置、版本、回滚和停止条件，为 `P4-03` 准备环境；它不表示 Testnet 资格已经通过。
-_Avoid_: Testnet Qualification、测试网已验收
+**Paper Trading**:
+实时行情驱动、无交易所写副作用的 AI Plan 执行模式。
 
-**Release Gate**:
-从一个风险阶段进入下一阶段前必须由独立证据和明确授权共同满足的放行门槛。
-_Avoid_: 里程碑完成、默认继续
+**Testnet Protocol Smoke**:
+极少量已授权 Bybit Testnet 写操作，用于验证协议、幂等、私有事件和对账，不代表策略资格认证。
+
+**Bybit Testnet Qualification**:
+在 Paper 和历史证据通过后，使用冻结 Context/Prompt/Model/AITradingPlan/Validator/Execution/授权进行的资格与稳定性验证。
+
+## 已取代词汇
+
+以下属于 v2 历史语言，不得进入 v3 活动架构：
+
+- `strategy-space-v1-vs`
+- `StrategyIntent v2`
+- Deterministic Strategy Materializer
+- Materialized Trade Parameters
+- 后置策略型 Risk Engine
+- `APPROVE / ADJUST_DOWN` 风险裁决
+- Entry/Stop Anchor
+- Risk Tier
+
+v2 历史表、代码、提交和审计可以保留，但必须标记为遗留并由 `P3-12` 安全迁移。
+
+## 新闻边界
+
+当前默认业务链没有 NewsRiskGuard、新闻 Provider、新闻 Prompt 输入或新闻 Gate，也不声称具备新闻风险保护。未来引入新闻能力前必须先修订计划和 ADR。
