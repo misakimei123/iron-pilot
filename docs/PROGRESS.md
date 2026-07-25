@@ -22,10 +22,9 @@
 - Current phase: Phase C — AI to Paper
 - In progress: None
 - Ready:
-  - P3-02
   - P3-09
 - Blocked: None
-- Next recommended task: P3-02
+- Next recommended task: P3-09
 
 ## Task Status
 
@@ -44,7 +43,7 @@
 | `P2-03` | `DONE` | 2026-07-25 | 2026-07-25 | `632cc6f82c1b2f0c9523ffe4a08b8522491f69a7` | `ironpilot-market-features-v1`、双周期完整性、实时价差、稳定 snapshot/event hash、可解释 Prefilter、TTL/去重/冷却/预算；13 项专项测试、73 项全工作区测试及全部质量门禁 | 未修改开发计划；未批准任何阶段 Gate |
 | `P2-04` | `DONE` | 2026-07-25 | 2026-07-25 | `67ab2afefc034022a853755a1914094147730bbb` | `ironpilot-market-replay-v1` manifest/dataset/report hash、固定 clock/seed、`strategy-space-v1-vs` 绑定、future-data 隔离；9 项专项测试、82 项全工作区测试及全部质量门禁 | 未修改开发计划；未批准任何阶段 Gate |
 | `P3-01` | `DONE` | 2026-07-25 | 2026-07-25 | `156adcc66c8b1cead0f2619d9d92e203759986ab` | `ironpilot-portfolio-v1`、受管数量卖出边界、余额差异阻止新开仓、Fill/ManagedLot 原子幂等与对账审计；10 项专项测试、92 项全工作区测试及全部质量门禁 | 未修改开发计划；未批准任何阶段 Gate |
-| `P3-02` | `READY` | — | — | — | — | `P1-02`,`P3-01` 已完成 |
+| `P3-02` | `DONE` | 2026-07-25 | 2026-07-25 | `be3bb43855d3b92398c965203cade3e199e08c6b` | `ironpilot-risk-rules-v1`、六种封闭裁决、只降不升授权、Portfolio/活动计划 fail-closed、确定性决策 hash；10 项专项测试、102 项全工作区测试及全部质量门禁 | 未实现 P3-09 物化算法、TradePlan/Execution 或持久化编排；未修改开发计划或批准 Gate |
 | `P3-09` | `READY` | — | — | — | — | `P1-02`,`P2-03`,`P3-01` 已完成 |
 | `P3-03` | `PLANNED` | — | — | — | — | — |
 | `P3-04` | `PLANNED` | — | — | — | — | — |
@@ -172,9 +171,16 @@ None.
 - 证据：10 项 P3-01 专项测试覆盖 Instrument Rules 资产绑定、买卖 Fill 合同、受管/可用数量卖出上限、未知资产与短缺分类、任意余额差异阻止新开仓、规范快照 hash、重复/非法资产 fail-closed、买卖 Fill 持久化幂等、幂等键内容冲突、超量卖出事务回滚及对账/审计原子幂等；全工作区 92 项测试通过，1 项既有 Bybit 线上 WSS 只读测试保持显式忽略；`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo build --workspace --all-targets --locked`、`cargo metadata --locked --no-deps`、cargo-deny advisories/bans/licenses/sources、Gitleaks 8.30.1 Git 历史与源码工作树扫描全部通过；`docs/DEVELOPMENT_PLAN.md` 零差异。
 - 已知限制：本 Task 接受上游提供的交易所余额事实但不调用私有 API；不创建订单、不模拟成交、不计算手续费、不裁决 Risk，也不实现 TradePlan 生命周期或任何阶段 Gate 批准。
 
+### P3-02 — 确定性 Risk Engine
+
+- 结果：实现 `ironpilot-risk-rules-v1` 纯领域合同；Risk 输入必须绑定本地已验证的 `strategy-space-v1-vs` Intent、原始 decision/snapshot/instrument/action、物化算法版本与不可变 hash。裁决结果封闭为 `APPROVE`、`ADJUST_DOWN`、`REJECT`、`REDUCE_ONLY`、`HALT_SYMBOL`、`HALT_SYSTEM`；只有批准或向下调整能产生私有构造的 `RiskAuthorization`，并保留原策略身份且数量永不增加。Portfolio 差异、活动 TradePlan 上限、系统/标的降权及硬上限破坏均 fail closed；决策 hash 绑定全部裁决输入、上下文、结果和原因。
+- Commit：`be3bb43855d3b92398c965203cade3e199e08c6b`。
+- 证据：10 项 P3-02 专项测试覆盖合法追溯、只降不升、零额度、Portfolio 差异、活动计划上限与硬上限破坏、系统/标的降权、非 `strategy-space-v1-vs`/非 `OPEN_LONG` 输入拒绝、六种结果封闭、确定性 hash 及授权数量属性测试；全工作区 102 项测试通过，1 项既有 Bybit 线上 WSS 只读测试保持显式忽略；`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo test --workspace --all-targets --locked`、`cargo build --workspace --all-targets --locked`、`cargo metadata --locked --no-deps`、cargo-deny 0.19.4 advisories/bans/licenses/sources、Gitleaks 8.30.1 Git 历史与本次源码工作树扫描、`git diff --check` 全部通过；`docs/DEVELOPMENT_PLAN.md` 零差异。
+- 已知限制：本 Task 只冻结并实现 `P3-VS` 前 `OPEN_LONG` 物化候选的纯领域风险裁决与授权边界；P3-09 负责真实确定性物化算法，后续 TradePlan/Application Task 负责 risk decision 持久化、audit-before-action 和 Execution 输入编排。本 Task 不构造订单、不产生外部副作用，也不批准任何阶段 Gate。
+
 ## Next Action
 
-Execute P3-02 next.
+Execute P3-09 next.
 
 以上内容是依据 `docs/DEVELOPMENT_PLAN.md` 静态依赖生成的进度建议，不改变任何 Task 依赖。
 
