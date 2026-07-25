@@ -22,10 +22,10 @@
 - Current phase: Phase B — Market to AI
 - In progress: None
 - Ready:
-  - P2-03
+  - P2-04
   - P3-01
 - Blocked: None
-- Next recommended task: P2-03
+- Next recommended task: P2-04
 
 ## Task Status
 
@@ -41,8 +41,8 @@
 | `P1-05` | `DONE` | 2026-07-25 | 2026-07-25 | `24e7e87ea698e749c1ffad423136e36655ce3f31` | Tokio 有界任务监督与 watch 取消；1024/256 有界队列和 correlation ID；饱和/关闭不静默丢失；可信健康快照；RSS/CPU 采样；1400 MiB 软门槛降级；协作/强制 shutdown；5 项专项测试、44 项全工作区测试及全部质量门禁 | 未修改开发计划；未批准任何阶段 Gate |
 | `P2-01` | `DONE` | 2026-07-25 | 2026-07-25 | `ffab892dad1318633f6665dcbb39b14900fca10c` | Bybit fixtures、TTL/hash、错误分类、在线只读 smoke、52 项全工作区测试及全部质量门禁 | 未修改开发计划；未批准任何阶段 Gate |
 | `P2-02` | `DONE` | 2026-07-25 | 2026-07-25 | `8bc805aed916df1a56ef4472484ad3bfc5ed1702` | 1–3 标的确定性订阅与重订阅；heartbeat、去重、乱序、重连、freshness 和显式 backpressure；8 项专项测试、60 项全工作区测试及全部质量门禁 | 未修改开发计划；未批准任何阶段 Gate |
-| `P2-03` | `READY` | — | — | — | — | `P2-02` 已完成 |
-| `P2-04` | `PLANNED` | — | — | — | — | — |
+| `P2-03` | `DONE` | 2026-07-25 | 2026-07-25 | `632cc6f82c1b2f0c9523ffe4a08b8522491f69a7` | `ironpilot-market-features-v1`、双周期完整性、实时价差、稳定 snapshot/event hash、可解释 Prefilter、TTL/去重/冷却/预算；13 项专项测试、73 项全工作区测试及全部质量门禁 | 未修改开发计划；未批准任何阶段 Gate |
+| `P2-04` | `READY` | — | — | — | — | `P2-03`,`P1-04` 已完成 |
 | `P3-01` | `READY` | — | — | — | — | `P1-04`,`P2-01` 已完成 |
 | `P3-02` | `PLANNED` | — | — | — | — | — |
 | `P3-09` | `PLANNED` | — | — | — | — | — |
@@ -151,9 +151,16 @@ None.
 - 证据：8 项 P2-02 专项测试覆盖确定性订阅集合、精确 Decimal 映射、K 线与 orderbook 去重/乱序、每主题 freshness、订阅确认/拒绝、队列饱和、Spot-only 配置与退避上限，以及本地真实 WebSocket 断线重连、原集合重订阅和恢复后交付；全工作区 60 项测试通过，1 项依赖 Bybit 线上 WSS 的只读测试保持显式忽略；`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo build --workspace --all-targets --locked`、`cargo metadata --locked --no-deps`、cargo-deny advisories/bans/licenses/sources、Gitleaks 8.30.1 Git 历史与源码工作树扫描全部通过；`docs/DEVELOPMENT_PLAN.md` 零差异。
 - 已知限制：当前执行环境无法完成 Bybit 主网 WSS 握手，因此未把线上只读 smoke 计为通过；协议恢复和有界性验收由确定性测试及本地真实 WebSocket 端到端测试证明。本 Task 不包含私有流、交易写操作、市场特征、历史回放或任何 Gate 批准。
 
+### P2-03 — Market Features 与 Eligibility/Event Engine
+
+- 结果：冻结并实现独立的 `ironpilot-market-features-v1` 合同；从 120 根连续已闭合 15m/1h K 线和 30 秒内一级盘口生成 Donchian、EMA、Wilder RSI/ATR/ADX、成交量比率、EMA alignment、关键位置、11 种受控形态和实时价差；输入与输出分别形成规范化 SHA-256，REST bootstrap、WebSocket live 和 replay 的相同市场事实产生相同 snapshot hash；Eligibility/Event Prefilter 对数据 TTL、系统/标的/活动 TradePlan 状态、流动性、价差、信息增量、去重、冷却、并发、调用、Token 和成本预算给出稳定原因码，事件状态和去重表均有硬上限。
+- Commit：`632cc6f82c1b2f0c9523ffe4a08b8522491f69a7`。
+- 证据：13 项 P2-03 专项测试覆盖冻结指标已知向量、双周期对齐、future/stale/gap/duplicate/unclosed、11 种形态与冲突优先级、扁平动量 fail-closed、WS 输入到规范 candle/book 映射、跨传输与重启 hash 等价、event TTL、去重、冷却、无信息增量、状态解释、预算耗尽及 1024 项去重状态上限；全工作区 73 项测试通过，1 项既有 Bybit 线上 WSS 只读测试保持显式忽略；`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo build --workspace --all-targets --locked`、`cargo metadata --locked --no-deps`、cargo-deny advisories/bans/licenses/sources、Gitleaks 8.30.1 Git 历史与源码工作树扫描全部通过；`docs/DEVELOPMENT_PLAN.md` 零差异。
+- 已知限制：本 Task 只产生只读市场事实和是否允许后续 AI 决策尝试的稀疏事件，不选择方向、策略家族、入场、止损、目标、数量或执行政策；不包含 AI Provider、历史回放、持久化事件账本、交易写操作或任何 Gate 批准。
+
 ## Next Action
 
-Execute P2-03 next.
+Execute P2-04 next.
 
 以上内容是依据 `docs/DEVELOPMENT_PLAN.md` 静态依赖生成的进度建议，不改变任何 Task 依赖。
 
