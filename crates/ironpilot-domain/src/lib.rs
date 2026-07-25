@@ -9,15 +9,16 @@ mod ids;
 mod instrument;
 mod market;
 mod market_features;
+mod portfolio;
 mod replay;
 mod state;
 mod strategy;
 
 pub use decimal::{DomainDecimal, ParseDomainDecimalError};
 pub use ids::{
-    AuditEntryId, CorrelationId, DecisionId, EligibilityEventId, FillId, OrderId, OrderIntentId,
-    OutboxMessageId, ParseStableIdError, RiskDecisionId, RuntimeInstanceId, SnapshotId,
-    TradePlanActionId, TradePlanId,
+    AuditEntryId, CorrelationId, DecisionId, EligibilityEventId, FillId, ManagedLotId, OrderId,
+    OrderIntentId, OutboxMessageId, ParseStableIdError, ReconciliationRunId, RiskDecisionId,
+    RuntimeInstanceId, SnapshotId, TradePlanActionId, TradePlanId,
 };
 pub use instrument::{
     Exchange, InstrumentId, InstrumentType, ParseInstrumentIdError, Symbol,
@@ -36,6 +37,12 @@ pub use market_features::{
     MarketFeatureEngine, MarketFeatureError, MarketFeatureSnapshot, MarketTimeframe,
     PatternObservation, PatternSemantic, PrefilterContext, PrefilterDecision,
     PrefilterRejectionReason, TopOfBook, VOLUME_RATIO_PERIOD, WILDER_PERIOD,
+};
+pub use portfolio::{
+    AssetReconciliation, ExchangeAssetBalance, LocalAssetBalance, MAX_PORTFOLIO_ASSETS,
+    ManagedPosition, PORTFOLIO_SCHEMA_VERSION_V1, PortfolioError, PortfolioFill, PortfolioFillSide,
+    PortfolioHash, PortfolioReconciler, PortfolioReconciliationStatus, PortfolioSnapshot,
+    SellAuthorization,
 };
 pub use replay::{
     MARKET_REPLAY_REPORT_VERSION_V1, MARKET_REPLAY_SCHEMA_VERSION_V1, REPLAY_DETERMINISTIC_SEED_V1,

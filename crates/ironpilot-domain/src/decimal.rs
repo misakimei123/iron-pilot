@@ -35,6 +35,16 @@ impl DomainDecimal {
     pub const fn as_decimal(self) -> Decimal {
         self.0
     }
+
+    #[must_use]
+    pub fn checked_add(self, other: Self) -> Option<Self> {
+        self.0.checked_add(other.0).map(Self)
+    }
+
+    #[must_use]
+    pub fn checked_sub(self, other: Self) -> Option<Self> {
+        self.0.checked_sub(other.0).map(Self)
+    }
 }
 
 impl fmt::Display for DomainDecimal {

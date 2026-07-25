@@ -27,6 +27,7 @@ pub use config::{
     load_startup_config, load_startup_config_from_vars, parse_and_validate_yaml, parse_yaml_config,
 };
 pub use persistence::{
-    AuditRow, InstanceLease, LeaseAcquireError, PendingOutboxRow, SqliteRepository, StorageError,
+    AuditRow, InstanceLease, LeaseAcquireError, PendingOutboxRow, PersistenceEffect,
+    SqliteRepository, StorageError,
 };
 pub use resources::{ProcessResourceSampler, ResourceSampleError};
