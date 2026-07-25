@@ -22,11 +22,10 @@
 - Current phase: Phase C — AI-Dominant Paper
 - In progress: None
 - Ready:
-  - P3-04
   - P3-13
   - P3-07A
 - Blocked: None
-- Next recommended task: P3-04
+- Next recommended task: P3-13
 
 ## Task Status
 
@@ -50,7 +49,7 @@
 | `P3-09` | `CANCELLED` | — | — | — | DEVELOPMENT_PLAN v3.0.0；ADR-0006 | 未开始实现；Materializer 与 AI 主导交易权限冲突 |
 | `P3-12` | `DONE` | 2026-07-25 | 2026-07-25 | `117dad5dede912b3850b93ff8bf47404bde32a84` | `AITradingPlan v3` 合同；v2 源码/API/状态/配置隔离；Replay v2 版本证据；遗留 SQLite 表只读封存；8 项专项测试与全量门禁 | 未修改开发计划；未批准任何阶段 Gate |
 | `P3-03` | `DONE` | 2026-07-25 | 2026-07-25 | `e093bc8c11d7a9927450b6be652eb26eab4c2dd8` | 完整事实 Context/稳定 hash；原始响应与 AI Plan provenance；原子 TradePlan Ledger；8 项专项测试与全量门禁 | 未修改开发计划；未批准任何阶段 Gate |
-| `P3-04` | `READY` | — | — | — | — | P3-03 完成后依赖已满足 |
+| `P3-04` | `DONE` | 2026-07-25 | 2026-07-25 | `98f30dddf68ab8fc88c522d9a24e1c2c123da3c7` | Prompt v1；DeepSeek JSON client；strict parse；usage/cost/latency；预算；一次 replan；持久化证据；11 项专项测试与全量门禁 | 未修改开发计划；未批准任何阶段 Gate；确定性门禁不调用线上 DeepSeek |
 | `P3-13` | `READY` | — | — | — | — | P3-12 完成后依赖已满足 |
 | `P3-05` | `PLANNED` | — | — | — | — | — |
 | `P3-10A` | `PLANNED` | — | — | — | — | — |
@@ -196,7 +195,7 @@ None.
 - 迁移：将 v2 Strategy Space、Materializer 与确定性 Risk Engine 源码/测试移入非编译 `legacy/v2` 历史目录并移出公共 API；TradePlan 状态删除 `MATERIALIZED`/`RISK_APPROVED`，改为 `PROPOSED → ACCEPTED`；配置升级为 `ironpilot-config-v2`，绑定 AI Decision Context 与 AITradingPlan 版本；Replay 升级为 v2 manifest/report 并用 Context/Plan 版本证据替代 Strategy Space；SQLite 保留三个 v2 表，但以 9 个触发器禁止新增、修改和删除。
 - Commit：`117dad5dede912b3850b93ff8bf47404bde32a84`。
 - 证据：7 项 `AITradingPlan v3` 合同测试和 1 项遗留表封存测试覆盖完整方案 roundtrip、7 个动作、精确参数与稳定 hash、未知字段、浮点/单位、Spot 非法方向、动作字段、v2 输入隔离、活动 API 无旧权限模型、TradePlan 旧状态拒绝、Replay v3 版本绑定及数据库写入封存；全工作区 92 项测试通过，1 项既有 Bybit 线上 WSS 只读测试保持显式忽略；`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo test --workspace --all-targets --locked`、`cargo build --workspace --all-targets --locked`、`cargo metadata --locked --no-deps`、cargo-deny advisories/bans/licenses/sources、Gitleaks 8.30.1 Git 历史与源码工作树扫描、v3 活动权限/Replay/遗留证据静态断言和 `git diff --check` 全部通过；`docs/DEVELOPMENT_PLAN.md` 零差异。
-- 已知限制：本 Task 只建立 AI 方案合同和安全迁移边界，当时不构建完整 Decision Context/TradePlan Ledger、不调用 DeepSeek、不执行 Validator 或订单；Context/Ledger 其后由 P3-03 完成，其余分别由 P3-04、P3-13 和 P3-05 完成。本 Task 不批准任何阶段 Gate。
+- 已知限制：本 Task 只建立 AI 方案合同和安全迁移边界，当时不构建完整 Decision Context/TradePlan Ledger、不调用 DeepSeek、不执行 Validator 或订单；Context/Ledger 和 DeepSeek Provider 其后分别由 P3-03、P3-04 完成，Validator 与订单分别由 P3-13、P3-05 完成。本 Task 不批准任何阶段 Gate。
 
 ### P3-03 — AI Decision Context 与 TradePlan Ledger
 
@@ -204,11 +203,20 @@ None.
 - 账本：实现 provider-neutral `AiRawResponse` 和 `AiTradePlanLedgerEntry`，逐项绑定 Context/response/AI plan/TradePlan/action ID 与三层 hash；`OPEN_LONG` 创建 `PROPOSED` TradePlan，`NO_TRADE` 创建终态追溯记录，其余管理动作必须追加到 AI 指定的现有同标的活动计划。SQLite migration 新增 `ai_decision_contexts`、`ai_provider_responses`、`ai_trading_plans` 和 `ai_trade_plan_ledger`；有效单实例租约下以单事务写入 Context、原始响应、解析计划、TradePlan/action、provenance link 与审计，重复相同内容业务效果为 0，ID 内容冲突、第二活动计划、目标计划不可用或审计失败全部回滚；任一 action 可查询回原始 Context/response/plan 及 hash。
 - Commit：`e093bc8c11d7a9927450b6be652eb26eab4c2dd8`。
 - 证据：5 项领域合同测试与 3 项 SQLite 账本测试覆盖完整事实序列、指标/形态/盘口/账户/持仓/订单/rules/最大亏损、输入顺序无关 hash、无本地推荐字段、future-data 与不可复现 Features 拒绝、跨 Context/stale provenance 拒绝、OPEN_LONG/HOLD 追溯、重复零副作用、每标的单活动计划、候选与审计失败完整回滚；全工作区 100 项测试通过，1 项既有 Bybit 线上 WSS 只读测试保持显式忽略；`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo test --workspace --all-targets --locked`、`cargo build --workspace --all-targets --locked`、`cargo metadata --locked --no-deps`、cargo-deny advisories/bans/licenses/sources、Gitleaks 8.30.1 Git 历史与源码工作树扫描、Context 无本地策略/原子账本 Schema/迁移保留静态断言和 `git diff --check` 全部通过；`docs/DEVELOPMENT_PLAN.md` 零差异。
-- 已知限制：本 Task 不构建 DeepSeek request/usage/cost/latency、不执行 `ACCEPT/REJECT`、不生成 OrderIntent 或 Paper 订单；分别由 P3-04、P3-13 和 P3-05 完成。本 Task 不批准任何阶段 Gate。
+- 已知限制：本 Task 当时不构建 DeepSeek request/usage/cost/latency、不执行 `ACCEPT/REJECT`、不生成 OrderIntent 或 Paper 订单；DeepSeek Provider 其后由 P3-04 完成，其余分别由 P3-13 和 P3-05 完成。本 Task 不批准任何阶段 Gate。
+
+### P3-04 — DeepSeek AI Trading Plan Provider
+
+- 结果：实现版本化 `ironpilot-deepseek-trading-prompt-v1`，把 Context 中完整 120 根 15m/1h 原始 K 线、派生指标/形态、一级盘口、instrument rules、账户/余额/受管持仓/活动订单和用户最大亏损授权同时交给 DeepSeek；Prompt 冻结七类 `AITradingPlan v3` 动作及精确 Decimal 输出要求，不注入 Strategy Space、Materializer、anchor、risk tier 或本地交易推荐。实现 DeepSeek V4 Flash/Pro `/chat/completions` JSON Output client、thinking mode、HTTPS/无重定向/敏感 Authorization header、响应体/输出 Token/超时/并发硬上限和严格模型/choice/finish reason/usage/provenance/TTL 校验；API key 仅从 `IRONPILOT_DEEPSEEK_API_KEY` 或显式构造参数进入敏感 header，不进入 YAML、Prompt 或证据。
+- 失败与预算：空输出、截断、未知字段、浮点/非法方案、provider refusal、HTTP/传输/超时、超大响应、future/expired Context、模型或 usage 不一致全部 fail closed，不生成本地替代方案；Provider 不依赖任何 Execution/OrderIntent Adapter。调用前按 Prompt 字节上界和最大输出预留 Token/最坏费用，call/token/cost 任一预算耗尽均在 HTTP 前拒绝；按 cache hit/cache miss/output 官方价格快照精确核算实际费用并记录 latency。拒绝反馈只能把同一 Context、被拒原始 AI Plan 和有界原因交回 DeepSeek，所有 clone 共享每 Context 一次 replan 上限，第二次在 HTTP 前拒绝。
+- 证据：新增 `ai_provider_attempts` migration，记录 prompt version/hash、完整 request/response、model/vendor ID、finish reason、usage、精确费用、延迟、outcome 和 replan 标记；租约保护下与不可变 Context、审计原子持久化，相同 attempt 重复效果为 0，冲突或审计失败完整回滚，SQLite 唯一索引强制每 Context 最多一次 replan。11 项专项测试覆盖 Prompt 完整事实与无本地策略、精确 OPEN_LONG 入场/数量/止损/多止盈、多管理动作、空/截断/未知字段、超时、call/token/cost 预算、拒绝反馈重规划、原始 usage/cost/latency 及持久化原子性。
+- Commit：`98f30dddf68ab8fc88c522d9a24e1c2c123da3c7`。
+- 门禁：全工作区 111 项测试通过、0 失败，1 项既有 Bybit 线上 WSS 只读测试保持显式忽略；`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo test --workspace --all-targets --locked`、`cargo build --workspace --all-targets --locked`、`cargo metadata --locked --no-deps`、cargo-deny advisories/bans/licenses/sources、Gitleaks 8.30.1 Git 历史与源码工作树扫描、Prompt AI 权限/Provider 执行隔离/证据 Schema 静态断言和 `git diff --check` 全部通过；`docs/DEVELOPMENT_PLAN.md` 零差异。
+- 已知限制：本 Task 不执行 P3-13 的 `ACCEPT/REJECT`，不生成 P3-05 的 OrderIntent/Paper 订单，也不实现 P3-06 的业务主循环；确定性仓库门禁使用本地 HTTP 协议服务，不消耗真实 DeepSeek API。Task 验收不批准任何阶段 Gate。
 
 ## Next Action
 
-Execute P3-04 next. P3-13 and P3-07A are also READY and remain independent until downstream dependencies converge.
+Execute P3-13 next. P3-07A is also READY and remains independent until downstream dependencies converge.
 
 以上内容是依据 `docs/DEVELOPMENT_PLAN.md` 静态依赖生成的进度建议，不改变任何 Task 依赖。
 
