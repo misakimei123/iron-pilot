@@ -1,9 +1,15 @@
 use core::fmt;
 use core::str::FromStr;
 use std::collections::BTreeSet;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use async_openai::Client as OpenAiClient;
+use async_openai::config::OpenAIConfig;
+use async_openai::error::OpenAIError;
+use async_openai::middleware::HttpRequestFactory;
 use ironpilot_application::{
     AI_TRADING_PROMPT_VERSION_V1, AiPlanRejectionFeedback, AiPromptError, AiTradingPrompt,
     LlmLimits,
@@ -12,11 +18,12 @@ use ironpilot_domain::{
     AiDecisionContext, AiDecisionContextId, AiProviderResponseId, AiRawResponse, AiTradingPlan,
     DecisionContextError, DomainDecimal,
 };
-use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
-use reqwest::{Client, StatusCode, Url, redirect};
+use reqwest::{Client as HttpClient, Response as HttpResponse, StatusCode, Url, redirect};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use serde_json::value::RawValue;
 use tokio::sync::Semaphore;
+use tower_service::Service;
 use uuid::Uuid;
 
 pub const DEEPSEEK_API_BASE_URL: &str = "https://api.deepseek.com/";
@@ -528,10 +535,118 @@ impl fmt::Display for DeepSeekProviderError {
 
 impl std::error::Error for DeepSeekProviderError {}
 
+#[derive(Debug)]
+struct CapturedHttpResponse {
+    status: StatusCode,
+    body: Vec<u8>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DeepSeekHttpBoundaryError {
+    ResponseTooLarge,
+    CaptureUnavailable,
+    ResponseRebuild,
+}
+
+impl fmt::Display for DeepSeekHttpBoundaryError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::ResponseTooLarge => "DeepSeek response exceeds the bounded body limit",
+            Self::CaptureUnavailable => "DeepSeek response evidence state is unavailable",
+            Self::ResponseRebuild => "cannot rebuild bounded DeepSeek SDK response",
+        })
+    }
+}
+
+impl std::error::Error for DeepSeekHttpBoundaryError {}
+
+#[derive(Clone)]
+struct BoundedDeepSeekHttpService {
+    client: HttpClient,
+    response_capture: Arc<Mutex<Option<CapturedHttpResponse>>>,
+}
+
+impl Service<HttpRequestFactory> for BoundedDeepSeekHttpService {
+    type Response = HttpResponse;
+    type Error = OpenAIError;
+    type Future =
+        Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
+
+    fn poll_ready(
+        &mut self,
+        _context: &mut core::task::Context<'_>,
+    ) -> core::task::Poll<Result<(), Self::Error>> {
+        core::task::Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, request_factory: HttpRequestFactory) -> Self::Future {
+        let client = self.client.clone();
+        let response_capture = self.response_capture.clone();
+        Box::pin(async move {
+            let request = request_factory.build().await?;
+            let mut response = client
+                .execute(request)
+                .await
+                .map_err(OpenAIError::Reqwest)?;
+            if response
+                .content_length()
+                .is_some_and(|length| length > MAX_DEEPSEEK_RESPONSE_BYTES as u64)
+            {
+                return Err(boundary_error(DeepSeekHttpBoundaryError::ResponseTooLarge));
+            }
+            let status = response.status();
+            let version = response.version();
+            let headers = response.headers().clone();
+            let mut body = Vec::new();
+            while let Some(chunk) = response.chunk().await.map_err(OpenAIError::Reqwest)? {
+                if body.len().saturating_add(chunk.len()) > MAX_DEEPSEEK_RESPONSE_BYTES {
+                    return Err(boundary_error(DeepSeekHttpBoundaryError::ResponseTooLarge));
+                }
+                body.extend_from_slice(&chunk);
+            }
+            {
+                let mut capture = response_capture
+                    .lock()
+                    .map_err(|_| boundary_error(DeepSeekHttpBoundaryError::CaptureUnavailable))?;
+                *capture = Some(CapturedHttpResponse {
+                    status,
+                    body: body.clone(),
+                });
+            }
+            let mut response_builder = http::Response::builder().status(status).version(version);
+            let response_headers = response_builder
+                .headers_mut()
+                .ok_or_else(|| boundary_error(DeepSeekHttpBoundaryError::ResponseRebuild))?;
+            *response_headers = headers;
+            response_builder
+                .body(body)
+                .map(HttpResponse::from)
+                .map_err(|_| boundary_error(DeepSeekHttpBoundaryError::ResponseRebuild))
+        })
+    }
+}
+
+fn boundary_error(error: DeepSeekHttpBoundaryError) -> OpenAIError {
+    OpenAIError::Boxed(Box::new(error))
+}
+
+fn is_response_too_large(error: &OpenAIError) -> bool {
+    matches!(
+        error,
+        OpenAIError::Boxed(error)
+            if error.downcast_ref::<DeepSeekHttpBoundaryError>()
+                == Some(&DeepSeekHttpBoundaryError::ResponseTooLarge)
+    )
+}
+
+fn is_openai_timeout(error: &OpenAIError) -> bool {
+    matches!(error, OpenAIError::Reqwest(error) if error.is_timeout())
+}
+
 #[derive(Clone)]
 pub struct DeepSeekAiTradingPlanProvider {
-    client: Client,
-    endpoint: Url,
+    client: OpenAiClient<OpenAIConfig>,
+    response_capture: Arc<Mutex<Option<CapturedHttpResponse>>>,
     config: DeepSeekProviderConfig,
     budget_limits: DeepSeekBudgetLimits,
     budget: Arc<Mutex<BudgetState>>,
@@ -596,24 +711,11 @@ impl DeepSeekAiTradingPlanProvider {
                 "DeepSeek base URL must be an HTTPS origin",
             ));
         }
-        let endpoint = base_url.join("chat/completions").map_err(|error| {
-            DeepSeekProviderError::configuration(
-                format!("cannot construct DeepSeek endpoint: {error}").into_boxed_str(),
-            )
-        })?;
-        let mut authorization =
-            HeaderValue::from_str(&format!("Bearer {api_key}")).map_err(|_| {
-                DeepSeekProviderError::configuration("DeepSeek API key is not a valid HTTP value")
-            })?;
-        authorization.set_sensitive(true);
-        let mut headers = HeaderMap::new();
-        headers.insert(AUTHORIZATION, authorization);
-        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-        let client = Client::builder()
+        let api_base = base_url.as_str().trim_end_matches('/');
+        let http_client = HttpClient::builder()
             .connect_timeout(CONNECT_TIMEOUT.min(config.request_timeout))
             .timeout(config.request_timeout)
             .redirect(redirect::Policy::none())
-            .default_headers(headers)
             .user_agent(concat!("ironpilot/", env!("CARGO_PKG_VERSION")))
             .build()
             .map_err(|error| {
@@ -621,9 +723,20 @@ impl DeepSeekAiTradingPlanProvider {
                     format!("cannot construct DeepSeek client: {error}").into_boxed_str(),
                 )
             })?;
+        let response_capture = Arc::new(Mutex::new(None));
+        let service = BoundedDeepSeekHttpService {
+            client: http_client.clone(),
+            response_capture: response_capture.clone(),
+        };
+        let openai_config = OpenAIConfig::new()
+            .with_api_key(api_key)
+            .with_api_base(api_base)
+            .with_org_id("")
+            .with_project_id("");
+        let client = OpenAiClient::build(http_client, openai_config).with_http_service(service);
         Ok(Self {
             client,
-            endpoint,
+            response_capture,
             config,
             budget_limits,
             budget: Arc::new(Mutex::new(BudgetState::default())),
@@ -718,28 +831,75 @@ impl DeepSeekAiTradingPlanProvider {
         let reservation = self.reserve_budget(requested_at, reserved_tokens, reserved_cost)?;
         let attempt_id =
             AiProviderResponseId::new(Uuid::new_v4()).expect("random UUID v4 must be non-nil");
-        let raw_request = build_request(&prompt, self.config);
+        let request = build_request(&prompt, self.config);
+        let raw_request = serde_json::to_string(&request).expect("DeepSeek request must serialize");
+        if let Err(error) = self.clear_response_capture() {
+            self.release_reservation(reservation);
+            return Err(error);
+        }
         let start = Instant::now();
-        let response_result = self
-            .client
-            .post(self.endpoint.clone())
-            .body(raw_request.clone())
-            .send()
-            .await;
-        let mut response = match response_result {
+        let response_result: Result<Box<RawValue>, OpenAIError> =
+            self.client.chat().create_byot(&request).await;
+        let captured_response = match self.take_response_capture() {
             Ok(response) => response,
             Err(error) => {
                 self.release_reservation(reservation);
-                let outcome = if error.is_timeout() {
-                    DeepSeekAttemptOutcome::Timeout
-                } else {
-                    DeepSeekAttemptOutcome::TransportError
-                };
-                let kind = if error.is_timeout() {
-                    DeepSeekProviderErrorKind::Timeout
-                } else {
-                    DeepSeekProviderErrorKind::Transport
-                };
+                return Err(error);
+            }
+        };
+        let latency_millis = elapsed_millis(start);
+        let raw_value = match response_result {
+            Ok(raw_value) => raw_value,
+            Err(error) => {
+                self.release_reservation(reservation);
+                if is_response_too_large(&error) {
+                    return Err(DeepSeekProviderError::new(
+                        DeepSeekProviderErrorKind::ResponseTooLarge,
+                        "DeepSeek response exceeds the bounded body limit",
+                    ));
+                }
+                if let Some(captured) = captured_response {
+                    let received_at = current_unix_millis()?;
+                    let status = captured.status;
+                    let raw_response = String::from_utf8(captured.body).map_err(|_| {
+                        DeepSeekProviderError::new(
+                            DeepSeekProviderErrorKind::InvalidResponse,
+                            "DeepSeek response is not UTF-8 JSON",
+                        )
+                    })?;
+                    let evidence = attempt_evidence(
+                        attempt_id,
+                        context,
+                        &prompt,
+                        self.config,
+                        requested_at,
+                        Some(received_at),
+                        latency_millis,
+                        raw_request,
+                        Some(raw_response),
+                        None,
+                        None,
+                        None,
+                        None,
+                        if status.is_success() {
+                            DeepSeekAttemptOutcome::TransportError
+                        } else {
+                            DeepSeekAttemptOutcome::HttpError
+                        },
+                    );
+                    let (kind, message) = if status.is_success() {
+                        (
+                            DeepSeekProviderErrorKind::InvalidResponse,
+                            format!("cannot decode DeepSeek response: {error}").into_boxed_str(),
+                        )
+                    } else {
+                        (DeepSeekProviderErrorKind::Http, http_error_message(status))
+                    };
+                    return Err(DeepSeekProviderError::with_evidence(
+                        kind, message, evidence,
+                    ));
+                }
+                let timeout = is_openai_timeout(&error);
                 let evidence = attempt_evidence(
                     attempt_id,
                     context,
@@ -747,61 +907,37 @@ impl DeepSeekAiTradingPlanProvider {
                     self.config,
                     requested_at,
                     None,
-                    elapsed_millis(start),
+                    latency_millis,
                     raw_request,
                     None,
                     None,
                     None,
                     None,
                     None,
-                    outcome,
+                    if timeout {
+                        DeepSeekAttemptOutcome::Timeout
+                    } else {
+                        DeepSeekAttemptOutcome::TransportError
+                    },
                 );
                 return Err(DeepSeekProviderError::with_evidence(
-                    kind,
+                    if timeout {
+                        DeepSeekProviderErrorKind::Timeout
+                    } else {
+                        DeepSeekProviderErrorKind::Transport
+                    },
                     format!("DeepSeek request failed: {error}").into_boxed_str(),
                     evidence,
                 ));
             }
         };
-        let status = response.status();
-        if response
-            .content_length()
-            .is_some_and(|length| length > MAX_DEEPSEEK_RESPONSE_BYTES as u64)
-        {
+        let captured = captured_response.ok_or_else(|| {
             self.release_reservation(reservation);
-            return Err(DeepSeekProviderError::new(
-                DeepSeekProviderErrorKind::ResponseTooLarge,
-                "DeepSeek response exceeds the bounded body limit",
-            ));
-        }
-        let mut body = Vec::new();
-        loop {
-            let chunk = match response.chunk().await {
-                Ok(chunk) => chunk,
-                Err(error) => {
-                    self.release_reservation(reservation);
-                    return Err(DeepSeekProviderError::new(
-                        if error.is_timeout() {
-                            DeepSeekProviderErrorKind::Timeout
-                        } else {
-                            DeepSeekProviderErrorKind::Transport
-                        },
-                        format!("cannot read DeepSeek response: {error}").into_boxed_str(),
-                    ));
-                }
-            };
-            let Some(chunk) = chunk else {
-                break;
-            };
-            if body.len().saturating_add(chunk.len()) > MAX_DEEPSEEK_RESPONSE_BYTES {
-                self.release_reservation(reservation);
-                return Err(DeepSeekProviderError::new(
-                    DeepSeekProviderErrorKind::ResponseTooLarge,
-                    "DeepSeek response exceeds the bounded body limit",
-                ));
-            }
-            body.extend_from_slice(&chunk);
-        }
+            DeepSeekProviderError::new(
+                DeepSeekProviderErrorKind::InvalidResponse,
+                "DeepSeek SDK completed without bounded response evidence",
+            )
+        })?;
         let received_at = match current_unix_millis() {
             Ok(received_at) => received_at,
             Err(error) => {
@@ -809,36 +945,18 @@ impl DeepSeekAiTradingPlanProvider {
                 return Err(error);
             }
         };
-        let latency_millis = elapsed_millis(start);
-        let raw_response = String::from_utf8(body).map_err(|_| {
+        let raw_response = String::from_utf8(captured.body).map_err(|_| {
             self.release_reservation(reservation);
             DeepSeekProviderError::new(
                 DeepSeekProviderErrorKind::InvalidResponse,
                 "DeepSeek response is not UTF-8 JSON",
             )
         })?;
-        if !status.is_success() {
+        if raw_value.get() != raw_response.trim() {
             self.release_reservation(reservation);
-            let evidence = attempt_evidence(
-                attempt_id,
-                context,
-                &prompt,
-                self.config,
-                requested_at,
-                Some(received_at),
-                latency_millis,
-                raw_request,
-                Some(raw_response),
-                None,
-                None,
-                None,
-                None,
-                DeepSeekAttemptOutcome::HttpError,
-            );
-            return Err(DeepSeekProviderError::with_evidence(
-                DeepSeekProviderErrorKind::Http,
-                http_error_message(status),
-                evidence,
+            return Err(DeepSeekProviderError::new(
+                DeepSeekProviderErrorKind::InvalidResponse,
+                "DeepSeek SDK response differs from captured provider evidence",
             ));
         }
         let decoded: ChatCompletionResponse =
@@ -955,6 +1073,29 @@ impl DeepSeekAiTradingPlanProvider {
             plan,
             evidence,
         })
+    }
+
+    fn clear_response_capture(&self) -> Result<(), DeepSeekProviderError> {
+        let mut capture = self.response_capture.lock().map_err(|_| {
+            DeepSeekProviderError::new(
+                DeepSeekProviderErrorKind::Transport,
+                "DeepSeek response evidence state is unavailable",
+            )
+        })?;
+        *capture = None;
+        Ok(())
+    }
+
+    fn take_response_capture(&self) -> Result<Option<CapturedHttpResponse>, DeepSeekProviderError> {
+        self.response_capture
+            .lock()
+            .map_err(|_| {
+                DeepSeekProviderError::new(
+                    DeepSeekProviderErrorKind::Transport,
+                    "DeepSeek response evidence state is unavailable",
+                )
+            })
+            .map(|mut capture| capture.take())
     }
 
     fn reserve_budget(
@@ -1183,8 +1324,11 @@ impl WireUsage {
     }
 }
 
-fn build_request(prompt: &AiTradingPrompt, config: DeepSeekProviderConfig) -> String {
-    serde_json::to_string(&ChatCompletionRequest {
+fn build_request<'a>(
+    prompt: &'a AiTradingPrompt,
+    config: DeepSeekProviderConfig,
+) -> ChatCompletionRequest<'a> {
+    ChatCompletionRequest {
         model: config.model.as_str(),
         messages: [
             ChatMessage {
@@ -1202,8 +1346,7 @@ fn build_request(prompt: &AiTradingPrompt, config: DeepSeekProviderConfig) -> St
         thinking: ThinkingMode { kind: "enabled" },
         max_tokens: config.max_output_tokens,
         stream: false,
-    })
-    .expect("DeepSeek request must serialize")
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1259,6 +1402,7 @@ fn domain_response_error(error: DecisionContextError) -> DeepSeekProviderError {
 
 fn validate_api_key(api_key: &str) -> Result<(), DeepSeekProviderError> {
     if !(MIN_API_KEY_LENGTH..=MAX_API_KEY_LENGTH).contains(&api_key.len())
+        || !api_key.is_ascii()
         || api_key.chars().any(char::is_whitespace)
         || api_key.chars().any(char::is_control)
     {
@@ -1377,6 +1521,7 @@ mod tests {
         let budget =
             DeepSeekBudgetLimits::new(1, 100_000, decimal("1.00")).expect("budget is valid");
         assert!(DeepSeekAiTradingPlanProvider::new("", config, budget).is_err());
+        assert!(DeepSeekAiTradingPlanProvider::new("密钥-not-ascii", config, budget).is_err());
         assert!(
             DeepSeekAiTradingPlanProvider::with_base_url(
                 "test-api-key",
@@ -1437,8 +1582,9 @@ mod tests {
     async fn exact_open_long_is_parsed_with_raw_usage_cost_and_latency_evidence() {
         let context = decision_context(2);
         let plan_json = plan_json(&context, "OPEN_LONG", 20);
+        let response_body = completion_body(&plan_json, "stop");
         let (base_url, server) =
-            spawn_http_server(vec![MockResponse::ok(completion_body(&plan_json, "stop"))]).await;
+            spawn_http_server(vec![MockResponse::ok(response_body.clone())]).await;
         let provider = test_provider(&base_url, 4, Duration::from_secs(2));
 
         let generated = provider
@@ -1484,6 +1630,10 @@ mod tests {
         assert_eq!(
             generated.evidence().prompt_version(),
             AI_TRADING_PROMPT_VERSION_V1
+        );
+        assert_eq!(
+            generated.evidence().raw_response(),
+            Some(response_body.as_str())
         );
         let requests = server.await.expect("mock server");
         assert_eq!(requests.len(), 1);
@@ -1644,6 +1794,63 @@ mod tests {
             Some(DeepSeekAttemptOutcome::Timeout)
         );
         let _ = server.await;
+    }
+
+    #[tokio::test]
+    async fn sdk_hidden_retries_are_disabled_and_http_evidence_is_exact() {
+        let context = decision_context(55);
+        let response_body = json!({
+            "error": {
+                "message": "rate limited for test",
+                "type": "rate_limit_error",
+                "param": null,
+                "code": null
+            }
+        })
+        .to_string();
+        let (base_url, server) = spawn_http_server(vec![MockResponse {
+            delay: Duration::ZERO,
+            status: 429,
+            body: response_body.clone(),
+        }])
+        .await;
+        let provider = test_provider(&base_url, 2, Duration::from_secs(2));
+
+        let error = provider
+            .generate_plan(&context)
+            .await
+            .expect_err("rate limit must fail without an SDK retry");
+        assert_eq!(error.kind(), DeepSeekProviderErrorKind::Http);
+        assert_eq!(
+            error
+                .evidence()
+                .and_then(DeepSeekAttemptEvidence::raw_response),
+            Some(response_body.as_str())
+        );
+        assert_eq!(
+            error.evidence().map(DeepSeekAttemptEvidence::outcome),
+            Some(DeepSeekAttemptOutcome::HttpError)
+        );
+        assert_eq!(provider.budget_snapshot().calls_used(), 1);
+        assert_eq!(server.await.expect("mock server").len(), 1);
+    }
+
+    #[tokio::test]
+    async fn sdk_transport_rejects_oversized_response_before_deserialization() {
+        let context = decision_context(56);
+        let (base_url, server) = spawn_http_server(vec![MockResponse::ok(
+            "x".repeat(MAX_DEEPSEEK_RESPONSE_BYTES + 1),
+        )])
+        .await;
+        let provider = test_provider(&base_url, 2, Duration::from_secs(2));
+
+        let error = provider
+            .generate_plan(&context)
+            .await
+            .expect_err("oversized provider response must fail closed");
+        assert_eq!(error.kind(), DeepSeekProviderErrorKind::ResponseTooLarge);
+        assert_eq!(provider.budget_snapshot().calls_used(), 1);
+        assert_eq!(server.await.expect("mock server").len(), 1);
     }
 
     #[tokio::test]

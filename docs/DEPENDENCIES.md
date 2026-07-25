@@ -14,8 +14,11 @@ features are disabled; only the listed features are enabled.
 | `serde` | `1.0.229` | Runtime / `ironpilot-domain`, `ironpilot-application`, `ironpilot-adapters` | Closed domain/configuration contracts and private Bybit DTO decoding | Apache-2.0 / MIT | Maintained upstream | `derive`, `std`; compile-time derive cost, no I/O or permissions | Replace derives with reviewed manual codecs if the wire layer changes |
 | `uuid` | `1.24.0` | Runtime / `ironpilot-domain` | Typed stable identifiers | Apache-2.0 / MIT | Maintained upstream | `serde`, `std`; generation features are disabled, no randomness or I/O | Replace with an internal 16-byte identifier while preserving canonical UUID text |
 | `noyalib` | `0.0.16` | Runtime / `ironpilot-adapters` | Strict YAML startup configuration parsing | Apache-2.0 / MIT | Maintained upstream; pre-1.0 API is version-pinned | `minimal` only; pure Rust, configuration input capped at 64 KiB | Replace with another reviewed Serde YAML decoder or a schema-specific parser |
-| `serde_json` | `1.0.151` | Runtime / `ironpilot-application`, `ironpilot-adapters`; Development / `ironpilot-domain` | Structured audit/outbox payloads and bounded Bybit JSON envelope decoding | Apache-2.0 / MIT | Maintained upstream | `std`; adapter response bodies are capped at 256 KiB before decoding | Replace runtime values with versioned schema-specific codecs |
-| `reqwest` | `0.12.28` | Runtime / `ironpilot-adapters` | Thin Bybit V5 public REST transport | Apache-2.0 / MIT | Maintained upstream | `rustls-tls-webpki-roots`; no redirects, 5 s connect timeout, 10 s request timeout, 256 KiB response cap; no credentials or private endpoints | Replace behind the adapter boundary while preserving DTO, timeout and error-classification contracts |
+| `serde_json` | `1.0.151` | Runtime / `ironpilot-application`, `ironpilot-adapters`; Development / `ironpilot-domain` | Structured audit/outbox payloads, bounded provider/Bybit JSON decoding, and exact raw JSON evidence | Apache-2.0 / MIT | Maintained upstream | `raw_value`, `std`; adapter response bodies are bounded before decoding | Replace runtime values with versioned schema-specific codecs |
+| `reqwest` | `0.13.4` | Runtime / `ironpilot-adapters` | Bybit V5 public REST transport and the HTTP transport supplied to `async-openai` | Apache-2.0 / MIT | Maintained upstream | `rustls`; redirects disabled; bounded connect/request timeouts and adapter-owned 128/256 KiB response caps | Replace behind adapter/SDK boundaries while preserving DTO, timeout, evidence and error-classification contracts |
+| `async-openai` | `0.41.1` | Runtime / `ironpilot-adapters` | Mature OpenAI-compatible client for the DeepSeek chat-completion protocol | MIT | Maintained upstream; version and feature set locked | `byot`, `chat-completion`, `middleware`, `rustls`; defaults disabled; BYOT carries DeepSeek fields; one bounded Tower service disables hidden retries and captures at most 128 KiB | Replace with another maintained OpenAI-compatible client while preserving the Prompt, raw evidence, budget and strict-plan contracts |
+| `http` | `1.4.2` | Runtime / `ironpilot-adapters` | Rebuild the already bounded provider response passed from IronPilot's evidence middleware back into `async-openai` | Apache-2.0 / MIT | Maintained upstream with the Hyper ecosystem | No direct features; response metadata/body only, no network access | Remove when the provider SDK exposes a public bounded raw-response hook |
+| `tower-service` | `0.3.3` | Runtime / `ironpilot-adapters` | Implement the minimal SDK transport service boundary without importing Tower utility layers | MIT | Stable, maintained ecosystem interface | No features; one cloneable service with no queue or retry layer | Remove when the provider SDK exposes an equivalent bounded raw-response hook |
 | `futures-util` | `0.3.33` | Runtime / `ironpilot-adapters` | Minimal async stream/sink extensions for the public WebSocket transport | Apache-2.0 / MIT | Maintained upstream | `sink`, `std`; no executor or unbounded channel features | Replace with direct poll adapters if the WebSocket transport changes |
 | `sha2` | `0.10.9` | Runtime / `ironpilot-domain`, `ironpilot-adapters` | Stable SHA-256 hashes for versioned market snapshots/events and dynamic Spot instrument rules | Apache-2.0 / MIT | Maintained upstream | No default features; hashes only bounded canonical feature/event inputs and the bounded 1–3 instrument rule set | Replace with a reviewed digest while publishing new hash schema versions |
 | `sqlx` | `0.9.0` | Runtime / `ironpilot-adapters` | SQLite pool, transactions, embedded migrations and typed error boundary | Apache-2.0 / MIT | Maintained upstream | `macros`, `migrate`, `runtime-tokio`, `sqlite-bundled`; pool capped at 4 connections and writes serialized | Replace with a reviewed SQLite adapter while preserving migrations, transaction and repository contracts |
@@ -35,10 +38,10 @@ dependency must be added only by the task that needs it and must record:
 - replacement or removal plan.
 
 The global default-feature ban remains enabled. `deny.toml` contains exact,
-version-pinned exceptions for reviewed proc-macro, test, YAML and SQLx/SQLite
-transitive feature sets. SQLx's temporary `hashbrown` and `syn` duplicate
-versions are also pinned with removal reasons; dependency or feature drift
-fails the supply-chain gate.
+version-pinned exceptions for reviewed proc-macro, test, YAML, provider SDK,
+TLS and SQLx/SQLite transitive feature sets. Temporary duplicate versions from
+the SDK, WebSocket and SQLx graphs are pinned with removal reasons; dependency
+or feature drift fails the supply-chain gate.
 
 ### P2-01 Bybit client choice
 
@@ -49,6 +52,23 @@ surface and domain types that P2-01 does not need, so the implementation uses a
 thin `reqwest` adapter limited to `GET /v5/market/time` and
 `GET /v5/market/instruments-info`. Bybit wire DTOs remain private to
 `ironpilot-adapters`.
+
+### P3-04 DeepSeek client choice
+
+The P3-04 refactor compared a direct HTTP implementation with `async-openai`,
+`genai`, and the broader Rig framework. `async-openai 0.41.1` was selected
+because it provides the focused OpenAI-compatible chat client, custom base URL,
+BYOT provider extensions and a public Tower transport boundary without adding
+agent, tool, RAG, workflow, or multi-provider orchestration semantics.
+
+The SDK now owns authentication, endpoint construction, standard request
+serialization, HTTP execution contract and response decoding. IronPilot owns
+only its trading-domain Prompt/types, strict `AITradingPlan` parsing, usage and
+cost accounting, explicit once-per-Context replan, and a small evidence
+middleware required by project invariants. The middleware streams and caps the
+body before deserialization, records the exact response, and replaces the SDK's
+default retry executor. Therefore one IronPilot provider attempt is one HTTP
+request; no SDK retry can escape the call/token/cost evidence boundary.
 
 ## Workspace boundaries
 

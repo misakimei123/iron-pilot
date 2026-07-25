@@ -1,8 +1,9 @@
 # DeepSeek AI Trading Plan Provider v1
 
 `P3-04` implements the provider boundary that turns an immutable
-`AiDecisionContext` into one unmodified `AITradingPlan v3`. It does not change
-`docs/DEVELOPMENT_PLAN.md`, task dependencies, or any phase Gate.
+`AiDecisionContext` into one unmodified `AITradingPlan v3`. The implementation
+follows `DEVELOPMENT_PLAN v3.1.0`'s open-source-first policy without changing
+task dependencies, phase order, or AI trading authority.
 
 ## Authority and prompt
 
@@ -23,9 +24,22 @@ filesystem tool, shell, or account credential.
 
 The request uses DeepSeek's OpenAI-compatible `/chat/completions` endpoint,
 thinking mode, non-streaming JSON Output, a bounded output-token limit, and an
-explicit instruction to return one JSON object. The API key is accepted through
-`IRONPILOT_DEEPSEEK_API_KEY`, stored only in a sensitive authorization header,
-and never copied into request evidence or YAML.
+explicit instruction to return one JSON object. `async-openai 0.41.1` owns the
+OpenAI-compatible base URL, authentication, chat-completion path, JSON request
+serialization, HTTP execution contract, and response decoding. Its BYOT surface
+keeps the DeepSeek-specific `thinking` and cache-usage fields without forking or
+reimplementing the general protocol. The API key is accepted through
+`IRONPILOT_DEEPSEEK_API_KEY`, held by the SDK's secret-aware configuration, and
+never copied into request evidence or YAML.
+
+IronPilot supplies one narrow Tower service around the SDK transport because
+the project has stricter evidence and resource semantics than the general SDK:
+it rejects response bodies above 128 KiB while streaming, captures the exact
+provider body before SDK deserialization, and reconstructs the same bounded
+response for the SDK. Installing this service also replaces `async-openai`'s
+default retry executor, so one budgeted provider attempt always causes at most
+one HTTP request. Replanning remains the separate, explicit, once-per-Context
+operation described below.
 
 ## Strict result handling
 

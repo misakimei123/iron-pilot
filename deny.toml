@@ -18,6 +18,7 @@ allow = [
 ]
 confidence-threshold = 0.93
 exceptions = [
+    { allow = ["CDLA-Permissive-2.0"], crate = "webpki-root-certs@1.0.9" },
     { allow = ["CDLA-Permissive-2.0"], crate = "webpki-roots@0.26.11" },
     { allow = ["CDLA-Permissive-2.0"], crate = "webpki-roots@1.0.9" },
 ]
@@ -46,9 +47,10 @@ skip = [
     { crate = "digest@0.11.3", reason = "Tungstenite's SHA-1 implementation uses digest 0.11 while SHA-2 and SQLx use digest 0.10" },
     { crate = "getrandom@0.4.3", reason = "Tungstenite's rand 0.10 graph uses getrandom 0.4 while existing runtime and test graphs use older releases" },
     { crate = "hashbrown@0.16.1", reason = "SQLx 0.9 also requires hashbrown 0.17 through a separate internal path" },
+    { crate = "r-efi@5.3.0", reason = "async-openai and proptest use getrandom 0.3 while the newer runtime graph uses getrandom 0.4" },
+    { crate = "rand@0.9.5", reason = "async-openai and proptest use rand 0.9 while Tokio-Tungstenite 0.30 uses rand 0.10" },
+    { crate = "rand_core@0.9.5", reason = "async-openai and proptest use rand_core 0.9 while Tokio-Tungstenite 0.30 uses rand_core 0.10" },
     { crate = "syn@2.0.119", reason = "SQLx 0.9 macros use syn 2 while current Serde and thiserror derives use syn 3" },
-    { crate = "webpki-roots@0.26.11", reason = "Tokio-Tungstenite 0.30 currently selects rustls-webpki roots 0.26 while Reqwest selects 1.0" },
-    { crate = "windows-sys@0.52.0", reason = "ring 0.17 uses the older Windows bindings while Tokio and SQLx use windows-sys 0.61" },
 ]
 skip-tree = []
 
@@ -137,6 +139,105 @@ exact = true
 # Reqwest's minimal Rustls/WebPKI client graph activates upstream standard
 # defaults even though Reqwest itself has default features disabled. Keep every
 # allowance version-pinned and exact so transport or TLS feature drift fails.
+#
+# async-openai's minimal chat-completion/BYOT API also activates its upstream
+# serialization, streaming support and request middleware defaults. These are
+# exact so SDK feature drift fails the supply-chain gate.
+[[bans.features]]
+crate = "combine@4.6.7"
+allow = ["alloc", "bytes", "default", "std"]
+exact = true
+
+[[bans.features]]
+crate = "core-foundation@0.10.1"
+allow = ["default", "link"]
+exact = true
+
+[[bans.features]]
+crate = "core-foundation-sys@0.8.7"
+allow = ["default", "link"]
+exact = true
+
+[[bans.features]]
+crate = "darling@0.20.11"
+allow = ["default", "suggestions"]
+exact = true
+
+[[bans.features]]
+crate = "derive_builder@0.20.2"
+allow = ["default", "std"]
+exact = true
+
+[[bans.features]]
+crate = "eventsource-stream@0.2.3"
+allow = ["default", "std"]
+exact = true
+
+[[bans.features]]
+crate = "fnv@1.0.7"
+allow = ["default", "std"]
+exact = true
+
+[[bans.features]]
+crate = "futures@0.3.33"
+allow = ["alloc", "async-await", "default", "executor", "std"]
+exact = true
+
+[[bans.features]]
+crate = "futures-sink@0.3.33"
+allow = ["alloc", "default", "std"]
+exact = true
+
+[[bans.features]]
+crate = "futures-util@0.3.33"
+allow = [
+    "alloc",
+    "async-await",
+    "async-await-macro",
+    "channel",
+    "default",
+    "futures-channel",
+    "futures-io",
+    "futures-macro",
+    "futures-sink",
+    "io",
+    "memchr",
+    "sink",
+    "slab",
+    "std",
+]
+exact = true
+
+[[bans.features]]
+crate = "rand@0.9.5"
+allow = ["alloc", "default", "os_rng", "small_rng", "std", "std_rng", "thread_rng"]
+exact = true
+
+[[bans.features]]
+crate = "security-framework@3.7.0"
+allow = ["OSX_10_14", "alpn", "default", "session-tickets"]
+exact = true
+
+[[bans.features]]
+crate = "security-framework-sys@2.17.0"
+allow = ["OSX_10_13", "default"]
+exact = true
+
+[[bans.features]]
+crate = "semver@1.0.28"
+allow = ["default", "std"]
+exact = true
+
+[[bans.features]]
+crate = "simd_cesu8@1.2.0"
+allow = ["default", "std"]
+exact = true
+
+[[bans.features]]
+crate = "tokio-util@0.7.19"
+allow = ["codec", "default", "io", "io-util", "libc"]
+exact = true
+
 [[bans.features]]
 crate = "base64@0.22.1"
 allow = ["alloc", "default", "std"]
@@ -218,7 +319,18 @@ allow = [
     "File",
     "FormData",
     "Headers",
+    "QueuingStrategy",
     "ReadableStream",
+    "ReadableByteStreamController",
+    "ReadableStreamByobReader",
+    "ReadableStreamByobRequest",
+    "ReadableStreamDefaultController",
+    "ReadableStreamDefaultReader",
+    "ReadableStreamGetReaderOptions",
+    "ReadableStreamReadResult",
+    "ReadableStreamReaderMode",
+    "ReadableStreamType",
+    "ReadableWritablePair",
     "Request",
     "RequestCache",
     "RequestCredentials",
@@ -226,21 +338,19 @@ allow = [
     "RequestMode",
     "Response",
     "ServiceWorkerGlobalScope",
+    "StreamPipeOptions",
+    "TransformStream",
+    "TransformStreamDefaultController",
+    "Transformer",
+    "UnderlyingSink",
+    "UnderlyingSource",
     "Window",
     "WorkerGlobalScope",
+    "WritableStream",
+    "WritableStreamDefaultController",
+    "WritableStreamDefaultWriter",
     "default",
     "std",
-]
-exact = true
-
-[[bans.features]]
-crate = "windows-sys@0.52.0"
-allow = [
-    "default",
-    "Win32",
-    "Win32_Foundation",
-    "Win32_System",
-    "Win32_System_Threading",
 ]
 exact = true
 
@@ -399,7 +509,7 @@ exact = true
 
 [[bans.features]]
 crate = "serde_json@1.0.151"
-allow = ["default", "std"]
+allow = ["default", "raw_value", "std"]
 exact = true
 
 [[bans.features]]
@@ -544,12 +654,20 @@ allow = [
     "Win32_Networking",
     "Win32_Networking_WinSock",
     "Win32_Security",
+    "Win32_Security_Authentication",
+    "Win32_Security_Authentication_Identity",
+    "Win32_Security_Credentials",
+    "Win32_Security_Cryptography",
     "Win32_Storage",
     "Win32_Storage_FileSystem",
     "Win32_System",
+    "Win32_System_Console",
     "Win32_System_IO",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Memory",
     "Win32_System_Pipes",
     "Win32_System_SystemServices",
+    "Win32_System_SystemInformation",
     "Win32_System_Threading",
     "Win32_System_WindowsProgramming",
 ]
