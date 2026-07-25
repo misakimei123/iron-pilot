@@ -6,8 +6,12 @@
 #![forbid(unsafe_code)]
 
 mod config;
+mod persistence;
 
 pub use config::{
     CONFIG_PATH_ENV, ENVIRONMENT_FINGERPRINT_ENV, ENVIRONMENT_NAME_ENV, LoadConfigError,
     load_startup_config, load_startup_config_from_vars, parse_and_validate_yaml, parse_yaml_config,
+};
+pub use persistence::{
+    AuditRow, InstanceLease, LeaseAcquireError, PendingOutboxRow, SqliteRepository, StorageError,
 };

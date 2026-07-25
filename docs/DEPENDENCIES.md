@@ -14,8 +14,10 @@ features are disabled; only the listed features are enabled.
 | `serde` | `1.0.229` | Runtime / `ironpilot-domain`, `ironpilot-application` | Closed domain and configuration wire contracts | Apache-2.0 / MIT | Maintained upstream | `derive`, `std`; compile-time derive cost, no I/O or permissions | Replace derives with reviewed manual codecs if the wire layer changes |
 | `uuid` | `1.24.0` | Runtime / `ironpilot-domain` | Typed stable identifiers | Apache-2.0 / MIT | Maintained upstream | `serde`, `std`; generation features are disabled, no randomness or I/O | Replace with an internal 16-byte identifier while preserving canonical UUID text |
 | `noyalib` | `0.0.16` | Runtime / `ironpilot-adapters` | Strict YAML startup configuration parsing | Apache-2.0 / MIT | Maintained upstream; pre-1.0 API is version-pinned | `minimal` only; pure Rust, configuration input capped at 64 KiB | Replace with another reviewed Serde YAML decoder or a schema-specific parser |
+| `serde_json` | `1.0.151` | Runtime / `ironpilot-application`; Development / `ironpilot-domain`, `ironpilot-adapters` | Structured audit/outbox payloads and JSON contract tests | Apache-2.0 / MIT | Maintained upstream | `std`; payloads are validated as JSON objects before persistence | Replace runtime values with a versioned schema-specific payload enum |
+| `sqlx` | `0.9.0` | Runtime / `ironpilot-adapters` | SQLite pool, transactions, embedded migrations and typed error boundary | Apache-2.0 / MIT | Maintained upstream | `macros`, `migrate`, `runtime-tokio`, `sqlite-bundled`; pool capped at 4 connections and writes serialized | Replace with a reviewed SQLite adapter while preserving migrations, transaction and repository contracts |
+| `tokio` | `1.53.1` | Runtime and Development / `ironpilot-adapters` | Async synchronization required by SQLx and storage tests | MIT | Maintained upstream | Runtime `sync`; tests add `macros`, `rt-multi-thread`; no unbounded tasks or channels in this task | Consolidate under the P1-05 supervisor runtime or replace with the selected bounded runtime |
 | `proptest` | `1.11.0` | Development / `ironpilot-domain` | Property tests for state-machine fail-closed behavior | Apache-2.0 / MIT | Maintained upstream | `std`; test-only CPU and memory, no production binary impact | Replace with exhaustive transition tables plus deterministic fuzz tests |
-| `serde_json` | `1.0.151` | Development / `ironpilot-domain` | JSON contract and unknown-field rejection tests | Apache-2.0 / MIT | Maintained upstream | `std`; test-only allocation, no production binary impact | Replace with `serde_test` or reviewed fixture decoding |
 
 The lockfile pins the resolved transitive graph. Any future direct Cargo
 dependency must be added only by the task that needs it and must record:
@@ -28,9 +30,10 @@ dependency must be added only by the task that needs it and must record:
 - replacement or removal plan.
 
 The global default-feature ban remains enabled. `deny.toml` contains exact,
-version-pinned exceptions only for `serde_derive`'s proc-macro default feature,
-the test-only Unicode parser feature set pulled in by `proptest`, and
-`noyalib`'s exact standard-library collection/scanner feature set.
+version-pinned exceptions for reviewed proc-macro, test, YAML and SQLx/SQLite
+transitive feature sets. SQLx's temporary `hashbrown` and `syn` duplicate
+versions are also pinned with removal reasons; dependency or feature drift
+fails the supply-chain gate.
 
 ## Workspace boundaries
 

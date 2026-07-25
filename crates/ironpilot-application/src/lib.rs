@@ -5,10 +5,15 @@
 #![forbid(unsafe_code)]
 
 mod config;
+mod persistence;
 
 pub use config::{
     CONFIG_SCHEMA_VERSION_V1, ConfigValidationError, DeploymentEnvironment, EnvironmentFingerprint,
     ExecutionMode, LlmLimits, MARKET_FEATURES_VERSION_V1, MarketLimits, PermissionConfig,
     QueueLimits, RISK_RULES_VERSION_V1, RuntimeConfig, RuntimeLimits, StartupIdentity,
     StorageLimits, ValidatedRuntimeConfig, VersionConfig,
+};
+pub use persistence::{
+    AuditEntry, OutboxMessage, PersistedSystemState, SystemStateChange, UnixMillis,
+    ValidationError as PersistenceValidationError,
 };

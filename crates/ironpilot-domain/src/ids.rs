@@ -87,3 +87,6 @@ stable_id!(TradePlanActionId);
 stable_id!(OrderIntentId);
 stable_id!(OrderId);
 stable_id!(FillId);
+stable_id!(AuditEntryId);
+stable_id!(OutboxMessageId);
+stable_id!(RuntimeInstanceId);

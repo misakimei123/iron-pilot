@@ -33,7 +33,13 @@ external-default-features = "deny"
 allow = []
 allow-workspace = true
 deny = []
-skip = []
+# SQLx 0.9's proc-macro graph still spans these upstream major-version
+# transitions. Keep the duplicate exceptions version-pinned and remove them
+# when SQLx converges on one version.
+skip = [
+    { crate = "hashbrown@0.16.1", reason = "SQLx 0.9 also requires hashbrown 0.17 through a separate internal path" },
+    { crate = "syn@2.0.119", reason = "SQLx 0.9 macros use syn 2 while current Serde and thiserror derives use syn 3" },
+]
 skip-tree = []
 
 # `serde`'s derive feature necessarily activates the proc-macro crate's empty
@@ -76,6 +82,284 @@ exact = true
 [[bans.features]]
 crate = "rustc-hash@2.1.3"
 allow = ["default", "std"]
+exact = true
+
+# SQLx 0.9 intentionally uses standard-library defaults across its internal
+# runtime, SQLite, migration and proc-macro graph. Each exception is exact and
+# version-pinned so dependency or feature drift fails closed.
+[[bans.features]]
+crate = "atoi@2.0.0"
+allow = ["default", "std"]
+exact = true
+
+[[bans.features]]
+crate = "bytes@1.12.1"
+allow = ["default", "std"]
+exact = true
+
+[[bans.features]]
+crate = "crossbeam-queue@0.3.13"
+allow = ["alloc", "default", "std"]
+exact = true
+
+[[bans.features]]
+crate = "digest@0.10.7"
+allow = ["alloc", "block-buffer", "core-api", "default", "std"]
+exact = true
+
+[[bans.features]]
+crate = "either@1.17.0"
+allow = ["default", "serde", "std"]
+exact = true
+
+[[bans.features]]
+crate = "event-listener@5.4.1"
+allow = ["default", "parking", "std"]
+exact = true
+
+[[bans.features]]
+crate = "form_urlencoded@1.2.2"
+allow = ["alloc", "default", "std"]
+exact = true
+
+[[bans.features]]
+crate = "futures-core@0.3.33"
+allow = ["alloc", "default", "std"]
+exact = true
+
+[[bans.features]]
+crate = "futures-executor@0.3.33"
+allow = ["default", "std"]
+exact = true
+
+[[bans.features]]
+crate = "futures-intrusive@0.5.0"
+allow = ["alloc", "default", "parking_lot", "std"]
+exact = true
+
+[[bans.features]]
+crate = "futures-io@0.3.33"
+allow = ["default", "std"]
+exact = true
+
+[[bans.features]]
+crate = "hashbrown@0.16.1"
+allow = [
+    "allocator-api2",
+    "default",
+    "default-hasher",
+    "equivalent",
+    "inline-more",
+    "raw-entry",
+]
+exact = true
+
+[[bans.features]]
+crate = "hex@0.4.3"
+allow = ["alloc", "default", "std"]
+exact = true
+
+[[bans.features]]
+crate = "libc@0.2.189"
+allow = ["default", "std"]
+exact = true
+
+[[bans.features]]
+crate = "lock_api@0.4.14"
+allow = ["atomic_usize", "default"]
+exact = true
+
+[[bans.features]]
+crate = "once_cell@1.21.4"
+allow = ["alloc", "default", "race", "std"]
+exact = true
+
+[[bans.features]]
+crate = "parking_lot@0.12.5"
+allow = ["default"]
+exact = true
+
+[[bans.features]]
+crate = "percent-encoding@2.3.2"
+allow = ["alloc", "default", "std"]
+exact = true
+
+[[bans.features]]
+crate = "proc-macro2@1.0.107"
+allow = ["default", "proc-macro"]
+exact = true
+
+[[bans.features]]
+crate = "quote@1.0.47"
+allow = ["default", "proc-macro"]
+exact = true
+
+[[bans.features]]
+crate = "redox_syscall@0.5.18"
+allow = ["default", "userspace"]
+exact = true
+
+[[bans.features]]
+crate = "serde@1.0.229"
+allow = ["alloc", "default", "derive", "rc", "serde_derive", "std"]
+exact = true
+
+[[bans.features]]
+crate = "serde_json@1.0.151"
+allow = ["default", "std"]
+exact = true
+
+[[bans.features]]
+crate = "sha2@0.10.9"
+allow = ["default", "std"]
+exact = true
+
+[[bans.features]]
+crate = "shlex@2.0.1"
+allow = ["default", "std"]
+exact = true
+
+[[bans.features]]
+crate = "spin@0.9.9"
+allow = [
+    "barrier",
+    "default",
+    "lazy",
+    "lock_api",
+    "lock_api_crate",
+    "mutex",
+    "once",
+    "rwlock",
+    "spin_mutex",
+]
+exact = true
+
+[[bans.features]]
+crate = "sqlx-core@0.9.0"
+allow = [
+    "_rt-tokio",
+    "any",
+    "crc",
+    "default",
+    "migrate",
+    "offline",
+    "serde",
+    "sha2",
+    "tokio",
+    "tokio-stream",
+]
+exact = true
+
+[[bans.features]]
+crate = "sqlx-macros@0.9.0"
+allow = ["_rt-tokio", "default", "derive", "macros", "migrate", "sqlite"]
+exact = true
+
+[[bans.features]]
+crate = "sqlx-macros-core@0.9.0"
+allow = [
+    "_rt-tokio",
+    "_sqlite",
+    "default",
+    "derive",
+    "macros",
+    "migrate",
+    "sqlite",
+    "thiserror",
+    "tokio",
+]
+exact = true
+
+[[bans.features]]
+crate = "syn@2.0.119"
+allow = [
+    "clone-impls",
+    "default",
+    "derive",
+    "extra-traits",
+    "fold",
+    "full",
+    "parsing",
+    "printing",
+    "proc-macro",
+    "visit",
+    "visit-mut",
+]
+exact = true
+
+[[bans.features]]
+crate = "syn@3.0.3"
+allow = ["clone-impls", "default", "derive", "parsing", "printing", "proc-macro"]
+exact = true
+
+[[bans.features]]
+crate = "synstructure@0.13.2"
+allow = ["default", "proc-macro"]
+exact = true
+
+[[bans.features]]
+crate = "tokio@1.53.1"
+allow = [
+    "bytes",
+    "default",
+    "fs",
+    "io-util",
+    "libc",
+    "macros",
+    "net",
+    "rt",
+    "rt-multi-thread",
+    "socket2",
+    "sync",
+    "time",
+    "tokio-macros",
+]
+exact = true
+
+[[bans.features]]
+crate = "tokio-stream@0.1.19"
+allow = ["default", "fs", "time"]
+exact = true
+
+[[bans.features]]
+crate = "tracing@0.1.44"
+allow = ["attributes", "default", "log", "std", "tracing-attributes"]
+exact = true
+
+[[bans.features]]
+crate = "url@2.5.8"
+allow = ["default", "std"]
+exact = true
+
+[[bans.features]]
+crate = "wasi@0.11.1+wasi-snapshot-preview1"
+allow = ["default", "std"]
+exact = true
+
+[[bans.features]]
+crate = "windows-sys@0.61.2"
+allow = [
+    "default",
+    "Wdk",
+    "Wdk_Foundation",
+    "Wdk_Storage",
+    "Wdk_Storage_FileSystem",
+    "Wdk_System",
+    "Wdk_System_IO",
+    "Win32",
+    "Win32_Foundation",
+    "Win32_Networking",
+    "Win32_Networking_WinSock",
+    "Win32_Security",
+    "Win32_Storage",
+    "Win32_Storage_FileSystem",
+    "Win32_System",
+    "Win32_System_IO",
+    "Win32_System_Pipes",
+    "Win32_System_SystemServices",
+    "Win32_System_Threading",
+    "Win32_System_WindowsProgramming",
+]
 exact = true
 
 [sources]
