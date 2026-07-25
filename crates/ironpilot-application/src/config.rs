@@ -3,14 +3,13 @@ use core::str::FromStr;
 use std::collections::BTreeSet;
 
 use ironpilot_domain::{
-    DomainDecimal, InstrumentId, InstrumentType, RISK_RULES_VERSION_V1,
-    STRATEGY_SPACE_VERSION_V1_VS,
+    AI_DECISION_CONTEXT_SCHEMA_VERSION_V1, AI_TRADING_PLAN_SCHEMA_VERSION_V3, DomainDecimal,
+    InstrumentId, InstrumentType, MARKET_FEATURES_VERSION_V1,
 };
 use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-pub const CONFIG_SCHEMA_VERSION_V1: &str = "ironpilot-config-v1";
-pub const MARKET_FEATURES_VERSION_V1: &str = "ironpilot-market-features-v1";
+pub const CONFIG_SCHEMA_VERSION_V2: &str = "ironpilot-config-v2";
 
 const MAX_TARGET_CPU_CORES: u16 = 2;
 const MAX_TARGET_MEMORY_MB: u32 = 2_048;
@@ -161,15 +160,15 @@ struct EnvironmentConfig {
 #[serde(deny_unknown_fields)]
 pub struct PermissionConfig {
     execution_mode: ExecutionMode,
-    ai_strategy_decisions: bool,
+    ai_trading_plans: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct VersionConfig {
     market_features: Box<str>,
-    strategy_space: Box<str>,
-    risk_rules: Box<str>,
+    ai_decision_context: Box<str>,
+    ai_trading_plan: Box<str>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
@@ -234,7 +233,7 @@ impl RuntimeConfig {
         &self,
         identity: &StartupIdentity,
     ) -> Result<(), ConfigValidationError> {
-        if self.schema_version.as_ref() != CONFIG_SCHEMA_VERSION_V1 {
+        if self.schema_version.as_ref() != CONFIG_SCHEMA_VERSION_V2 {
             return Err(ConfigValidationError::UnsupportedVersion {
                 field: "schema_version",
                 value: self.schema_version.clone(),
@@ -256,14 +255,14 @@ impl RuntimeConfig {
                 MARKET_FEATURES_VERSION_V1,
             ),
             (
-                "versions.strategy_space",
-                self.versions.strategy_space.as_ref(),
-                STRATEGY_SPACE_VERSION_V1_VS,
+                "versions.ai_decision_context",
+                self.versions.ai_decision_context.as_ref(),
+                AI_DECISION_CONTEXT_SCHEMA_VERSION_V1,
             ),
             (
-                "versions.risk_rules",
-                self.versions.risk_rules.as_ref(),
-                RISK_RULES_VERSION_V1,
+                "versions.ai_trading_plan",
+                self.versions.ai_trading_plan.as_ref(),
+                AI_TRADING_PLAN_SCHEMA_VERSION_V3,
             ),
         ] {
             if actual != expected {
@@ -496,9 +495,9 @@ impl ValidatedRuntimeConfig {
                 field: "permissions.execution_mode",
             });
         }
-        if next.permissions.ai_strategy_decisions && !current.permissions.ai_strategy_decisions {
+        if next.permissions.ai_trading_plans && !current.permissions.ai_trading_plans {
             return Err(ConfigValidationError::PermissionExpansion {
-                field: "permissions.ai_strategy_decisions",
+                field: "permissions.ai_trading_plans",
             });
         }
 
@@ -527,8 +526,8 @@ impl PermissionConfig {
     }
 
     #[must_use]
-    pub const fn ai_strategy_decisions(&self) -> bool {
-        self.ai_strategy_decisions
+    pub const fn ai_trading_plans(&self) -> bool {
+        self.ai_trading_plans
     }
 }
 
@@ -539,13 +538,13 @@ impl VersionConfig {
     }
 
     #[must_use]
-    pub fn strategy_space(&self) -> &str {
-        &self.strategy_space
+    pub fn ai_decision_context(&self) -> &str {
+        &self.ai_decision_context
     }
 
     #[must_use]
-    pub fn risk_rules(&self) -> &str {
-        &self.risk_rules
+    pub fn ai_trading_plan(&self) -> &str {
+        &self.ai_trading_plan
     }
 }
 

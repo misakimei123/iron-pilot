@@ -1188,6 +1188,59 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn v2_authority_tables_are_preserved_as_immutable_evidence() {
+        let fixture = Fixture::new().await;
+
+        for (table, statement, expected) in [
+            (
+                "strategy_intents",
+                "INSERT INTO strategy_intents(
+                    decision_id, event_id, schema_version, strategy_space_version,
+                    decided_at, expires_at, payload_json
+                 ) VALUES ('decision', 'event', '2.0', 'legacy', 1, 2, '{}')",
+                "strategy_intents is retired v2 evidence",
+            ),
+            (
+                "materialized_trade_parameters",
+                "INSERT INTO materialized_trade_parameters(
+                    decision_id, algorithm_version, materialized_at, payload_json
+                 ) VALUES ('decision', 'legacy', 1, '{}')",
+                "materialized_trade_parameters is retired v2 evidence",
+            ),
+            (
+                "risk_decisions",
+                "INSERT INTO risk_decisions(
+                    risk_decision_id, decision_id, rules_version, outcome, decided_at, payload_json
+                 ) VALUES ('risk', 'decision', 'legacy', 'REJECT', 1, '{}')",
+                "risk_decisions is retired v2 evidence",
+            ),
+        ] {
+            let error = sqlx::query(statement)
+                .execute(fixture.repository.pool())
+                .await
+                .expect_err("retired v2 authority table must reject new writes");
+            assert!(
+                error.to_string().contains(expected),
+                "{table} rejected for an unexpected reason: {error}"
+            );
+        }
+
+        let trigger_count: i64 = sqlx::query_scalar(
+            "
+            SELECT COUNT(*)
+            FROM sqlite_master
+            WHERE type = 'trigger' AND name LIKE 'legacy_%_forbid_%'
+            ",
+        )
+        .fetch_one(fixture.repository.pool())
+        .await
+        .expect("legacy retirement triggers should be readable");
+        assert_eq!(trigger_count, 9);
+
+        fixture.close().await;
+    }
+
+    #[tokio::test]
     async fn critical_state_audit_and_outbox_write_is_atomic() {
         let fixture = Fixture::new().await;
         let owner = runtime_id(1);

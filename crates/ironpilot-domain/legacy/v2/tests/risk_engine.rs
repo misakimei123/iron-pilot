@@ -1,5 +1,6 @@
 use core::str::FromStr;
 
+// Historical P3-02 evidence. This file is intentionally outside Cargo's tests directory.
 use ironpilot_domain::{
     AssetCode, DecisionId, DomainDecimal, EntryAnchor, EntryConfirmation, EntryPolicy,
     ExchangeAssetBalance, InstrumentId, InvalidationCondition, LocalAssetBalance,

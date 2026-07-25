@@ -1,9 +1,9 @@
 # IronPilot Market Replay v1
 
-> v3 migration note: the existing `strategy-space-v1-vs` manifest binding is
-> historical v2 evidence. `P3-12` and the v3 replay task must replace it with
-> versioned AI Decision Context / `AITradingPlan v3` evidence before this replay
-> participates in the v3 Vertical Slice.
+> Historical v2 evidence: `P3-12` replaced this active contract with
+> `docs/MARKET_REPLAY_V2.md`, whose manifest binds versioned AI Decision Context
+> and `AITradingPlan v3` evidence. This document remains unchanged in scope so
+> the original P2-04 evidence is understandable.
 
 This implementation contract records the deterministic, no-trade replay
 boundary delivered by `P2-04`. It does not change task scope, dependencies, or

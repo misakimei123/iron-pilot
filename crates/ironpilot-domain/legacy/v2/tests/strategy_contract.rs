@@ -1,3 +1,4 @@
+// Historical P1-02 evidence. This file is intentionally outside Cargo's tests directory.
 use ironpilot_domain::{
     StrategyAction, StrategyIntent, StrategyValidationError, ValidatedStrategyIntent,
 };

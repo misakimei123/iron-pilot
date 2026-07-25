@@ -91,5 +91,7 @@ fn terminal_order_states_never_transition() {
 fn unknown_serialized_states_are_rejected() {
     assert!(serde_json::from_str::<SystemState>("\"UNKNOWN\"").is_err());
     assert!(serde_json::from_str::<TradePlanState>("\"UNKNOWN\"").is_err());
+    assert!(serde_json::from_str::<TradePlanState>("\"MATERIALIZED\"").is_err());
+    assert!(serde_json::from_str::<TradePlanState>("\"RISK_APPROVED\"").is_err());
     assert!(serde_json::from_str::<OrderState>("\"UNKNOWN\"").is_err());
 }

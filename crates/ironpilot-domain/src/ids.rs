@@ -81,7 +81,8 @@ macro_rules! stable_id {
 stable_id!(SnapshotId);
 stable_id!(EligibilityEventId);
 stable_id!(DecisionId);
-stable_id!(RiskDecisionId);
+stable_id!(AiDecisionContextId);
+stable_id!(AiTradingPlanId);
 stable_id!(TradePlanId);
 stable_id!(TradePlanActionId);
 stable_id!(OrderIntentId);

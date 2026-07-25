@@ -4,15 +4,15 @@ use std::fmt::Write as _;
 use sha2::{Digest, Sha256};
 
 use crate::{
-    ClosedCandle, DomainDecimal, EligibilityEventEngine, EligibilityEventKind, EligibilityPolicy,
-    InstrumentId, LlmBudgetUsage, MARKET_FEATURES_VERSION_V1, MAX_TRACKED_ELIGIBILITY_INSTRUMENTS,
+    AI_DECISION_CONTEXT_SCHEMA_VERSION_V1, AI_TRADING_PLAN_SCHEMA_VERSION_V3, ClosedCandle,
+    DomainDecimal, EligibilityEventEngine, EligibilityEventKind, EligibilityPolicy, InstrumentId,
+    LlmBudgetUsage, MARKET_FEATURES_VERSION_V1, MAX_TRACKED_ELIGIBILITY_INSTRUMENTS,
     MarketDataSource, MarketFeatureEngine, MarketFeatureError, MarketFeatureSnapshot,
-    MarketTimeframe, PrefilterContext, PrefilterDecision, PrefilterRejectionReason,
-    STRATEGY_SPACE_VERSION_V1_VS, TopOfBook,
+    MarketTimeframe, PrefilterContext, PrefilterDecision, PrefilterRejectionReason, TopOfBook,
 };
 
-pub const MARKET_REPLAY_SCHEMA_VERSION_V1: &str = "ironpilot-market-replay-v1";
-pub const MARKET_REPLAY_REPORT_VERSION_V1: &str = "ironpilot-market-replay-report-v1";
+pub const MARKET_REPLAY_SCHEMA_VERSION_V2: &str = "ironpilot-market-replay-v2";
+pub const MARKET_REPLAY_REPORT_VERSION_V2: &str = "ironpilot-market-replay-report-v2";
 pub const REPLAY_DETERMINISTIC_SEED_V1: u64 = 0x4952_4f4e_5049_4c4f;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -212,7 +212,8 @@ impl ReplayDataset {
 pub struct ReplayManifest {
     schema_version: &'static str,
     feature_version: &'static str,
-    strategy_space_version: &'static str,
+    context_schema_version: &'static str,
+    ai_trading_plan_schema_version: &'static str,
     deterministic_seed: u64,
     start_unix_millis: u64,
     end_unix_millis: u64,
@@ -236,9 +237,10 @@ impl ReplayManifest {
             .map(|data| data.instrument_id().clone())
             .collect();
         let mut manifest = Self {
-            schema_version: MARKET_REPLAY_SCHEMA_VERSION_V1,
+            schema_version: MARKET_REPLAY_SCHEMA_VERSION_V2,
             feature_version: MARKET_FEATURES_VERSION_V1,
-            strategy_space_version: STRATEGY_SPACE_VERSION_V1_VS,
+            context_schema_version: AI_DECISION_CONTEXT_SCHEMA_VERSION_V1,
+            ai_trading_plan_schema_version: AI_TRADING_PLAN_SCHEMA_VERSION_V3,
             deterministic_seed: REPLAY_DETERMINISTIC_SEED_V1,
             start_unix_millis,
             end_unix_millis,
@@ -262,8 +264,13 @@ impl ReplayManifest {
     }
 
     #[must_use]
-    pub const fn strategy_space_version(&self) -> &'static str {
-        self.strategy_space_version
+    pub const fn context_schema_version(&self) -> &'static str {
+        self.context_schema_version
+    }
+
+    #[must_use]
+    pub const fn ai_trading_plan_schema_version(&self) -> &'static str {
+        self.ai_trading_plan_schema_version
     }
 
     #[must_use]
@@ -306,10 +313,11 @@ impl ReplayManifest {
         let mut output = String::new();
         write!(
             output,
-            "{{\"schema_version\":\"{}\",\"feature_version\":\"{}\",\"strategy_space_version\":\"{}\",\"deterministic_seed\":{},\"start_unix_millis\":{},\"end_unix_millis\":{},\"step_millis\":{},\"instruments\":[",
+            "{{\"schema_version\":\"{}\",\"feature_version\":\"{}\",\"context_schema_version\":\"{}\",\"ai_trading_plan_schema_version\":\"{}\",\"deterministic_seed\":{},\"start_unix_millis\":{},\"end_unix_millis\":{},\"step_millis\":{},\"instruments\":[",
             self.schema_version,
             self.feature_version,
-            self.strategy_space_version,
+            self.context_schema_version,
+            self.ai_trading_plan_schema_version,
             self.deterministic_seed,
             self.start_unix_millis,
             self.end_unix_millis,
@@ -387,7 +395,8 @@ impl ReplayRecord {
 pub struct ReplayReport {
     schema_version: &'static str,
     manifest_hash: ReplayHash,
-    strategy_space_version: &'static str,
+    context_schema_version: &'static str,
+    ai_trading_plan_schema_version: &'static str,
     deterministic_seed: u64,
     records: Vec<ReplayRecord>,
     output_hash: ReplayHash,
@@ -405,8 +414,13 @@ impl ReplayReport {
     }
 
     #[must_use]
-    pub const fn strategy_space_version(&self) -> &'static str {
-        self.strategy_space_version
+    pub const fn context_schema_version(&self) -> &'static str {
+        self.context_schema_version
+    }
+
+    #[must_use]
+    pub const fn ai_trading_plan_schema_version(&self) -> &'static str {
+        self.ai_trading_plan_schema_version
     }
 
     #[must_use]
@@ -442,10 +456,11 @@ impl ReplayReport {
         let mut output = String::new();
         write!(
             output,
-            "{{\"schema_version\":\"{}\",\"manifest_hash\":\"{}\",\"strategy_space_version\":\"{}\",\"deterministic_seed\":{},\"record_count\":{},\"event_count\":{},\"rejected_count\":{},\"records\":[",
+            "{{\"schema_version\":\"{}\",\"manifest_hash\":\"{}\",\"context_schema_version\":\"{}\",\"ai_trading_plan_schema_version\":\"{}\",\"deterministic_seed\":{},\"record_count\":{},\"event_count\":{},\"rejected_count\":{},\"records\":[",
             self.schema_version,
             self.manifest_hash,
-            self.strategy_space_version,
+            self.context_schema_version,
+            self.ai_trading_plan_schema_version,
             self.deterministic_seed,
             self.records.len(),
             self.event_count(),
@@ -571,9 +586,10 @@ impl ReplayRunner {
 
         let output_hash = hash_report(manifest, &records);
         Ok(ReplayReport {
-            schema_version: MARKET_REPLAY_REPORT_VERSION_V1,
+            schema_version: MARKET_REPLAY_REPORT_VERSION_V2,
             manifest_hash: manifest.manifest_hash,
-            strategy_space_version: manifest.strategy_space_version,
+            context_schema_version: manifest.context_schema_version,
+            ai_trading_plan_schema_version: manifest.ai_trading_plan_schema_version,
             deterministic_seed: manifest.deterministic_seed,
             records,
             output_hash,
@@ -591,13 +607,15 @@ fn validate_manifest(
     manifest: &ReplayManifest,
     dataset: &ReplayDataset,
 ) -> Result<(), ReplayError> {
-    if manifest.schema_version != MARKET_REPLAY_SCHEMA_VERSION_V1
+    if manifest.schema_version != MARKET_REPLAY_SCHEMA_VERSION_V2
         || manifest.feature_version != MARKET_FEATURES_VERSION_V1
     {
         return Err(ReplayError::VersionMismatch);
     }
-    if manifest.strategy_space_version != STRATEGY_SPACE_VERSION_V1_VS {
-        return Err(ReplayError::StrategySpaceVersionMismatch);
+    if manifest.context_schema_version != AI_DECISION_CONTEXT_SCHEMA_VERSION_V1
+        || manifest.ai_trading_plan_schema_version != AI_TRADING_PLAN_SCHEMA_VERSION_V3
+    {
+        return Err(ReplayError::AiAuthorityVersionMismatch);
     }
     if manifest.deterministic_seed != REPLAY_DETERMINISTIC_SEED_V1 {
         return Err(ReplayError::DeterministicSeedMismatch);
@@ -681,10 +699,11 @@ fn hash_candles(hasher: &mut ReplayHasher, candles: &[ClosedCandle]) {
 }
 
 fn hash_manifest(manifest: &ReplayManifest) -> ReplayHash {
-    let mut hasher = ReplayHasher::new("market-replay-manifest-v1");
+    let mut hasher = ReplayHasher::new("market-replay-manifest-v2");
     hasher.field(manifest.schema_version);
     hasher.field(manifest.feature_version);
-    hasher.field(manifest.strategy_space_version);
+    hasher.field(manifest.context_schema_version);
+    hasher.field(manifest.ai_trading_plan_schema_version);
     hasher.u64(manifest.deterministic_seed);
     hasher.u64(manifest.start_unix_millis);
     hasher.u64(manifest.end_unix_millis);
@@ -698,9 +717,10 @@ fn hash_manifest(manifest: &ReplayManifest) -> ReplayHash {
 }
 
 fn hash_report(manifest: &ReplayManifest, records: &[ReplayRecord]) -> ReplayHash {
-    let mut hasher = ReplayHasher::new("market-replay-report-output-v1");
+    let mut hasher = ReplayHasher::new("market-replay-report-output-v2");
     hasher.bytes(manifest.manifest_hash.as_bytes());
-    hasher.field(manifest.strategy_space_version);
+    hasher.field(manifest.context_schema_version);
+    hasher.field(manifest.ai_trading_plan_schema_version);
     hasher.u64(manifest.deterministic_seed);
     hasher.usize(records.len());
     for record in records {
@@ -838,7 +858,7 @@ pub enum ReplayError {
     MissingMarketData,
     FutureMarketData,
     VersionMismatch,
-    StrategySpaceVersionMismatch,
+    AiAuthorityVersionMismatch,
     DeterministicSeedMismatch,
     ContentHashMismatch,
     MarketFeature(MarketFeatureError),
@@ -872,8 +892,8 @@ impl fmt::Display for ReplayError {
             Self::VersionMismatch => {
                 formatter.write_str("replay schema or feature version mismatch")
             }
-            Self::StrategySpaceVersionMismatch => {
-                formatter.write_str("replay strategy-space version mismatch")
+            Self::AiAuthorityVersionMismatch => {
+                formatter.write_str("replay AI Context or AITradingPlan version mismatch")
             }
             Self::DeterministicSeedMismatch => {
                 formatter.write_str("replay deterministic seed mismatch")
@@ -997,19 +1017,27 @@ mod tests {
     }
 
     #[test]
-    fn replay_is_explicitly_bound_to_vertical_slice_strategy_space_and_fixed_seed() {
+    fn replay_is_bound_to_v3_context_plan_versions_and_fixed_seed() {
         let start = 120 * HOUR;
         let dataset = dataset_for("BTCUSDT", start);
         let manifest = ReplayManifest::new(&dataset, start, start).expect("manifest must be valid");
         let report = ReplayRunner::run(&manifest, &dataset).expect("replay must succeed");
 
         assert_eq!(
-            manifest.strategy_space_version(),
-            STRATEGY_SPACE_VERSION_V1_VS
+            manifest.context_schema_version(),
+            AI_DECISION_CONTEXT_SCHEMA_VERSION_V1
         );
         assert_eq!(
-            report.strategy_space_version(),
-            STRATEGY_SPACE_VERSION_V1_VS
+            report.context_schema_version(),
+            AI_DECISION_CONTEXT_SCHEMA_VERSION_V1
+        );
+        assert_eq!(
+            manifest.ai_trading_plan_schema_version(),
+            AI_TRADING_PLAN_SCHEMA_VERSION_V3
+        );
+        assert_eq!(
+            report.ai_trading_plan_schema_version(),
+            AI_TRADING_PLAN_SCHEMA_VERSION_V3
         );
         assert_eq!(manifest.deterministic_seed(), REPLAY_DETERMINISTIC_SEED_V1);
         assert_eq!(report.deterministic_seed(), REPLAY_DETERMINISTIC_SEED_V1);

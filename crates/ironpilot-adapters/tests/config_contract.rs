@@ -40,13 +40,16 @@ fn checked_in_yaml_matches_the_frozen_schema_and_defaults() {
         "development-paper-local"
     );
     assert_eq!(config.permissions().execution_mode(), ExecutionMode::Paper);
-    assert!(config.permissions().ai_strategy_decisions());
+    assert!(config.permissions().ai_trading_plans());
     assert_eq!(
         config.versions().market_features(),
         "ironpilot-market-features-v1"
     );
-    assert_eq!(config.versions().strategy_space(), "strategy-space-v1-vs");
-    assert_eq!(config.versions().risk_rules(), "ironpilot-risk-rules-v1");
+    assert_eq!(
+        config.versions().ai_decision_context(),
+        "ironpilot-ai-decision-context-v1"
+    );
+    assert_eq!(config.versions().ai_trading_plan(), "3.0");
     assert_eq!(config.runtime_limits().target_cpu_cores(), 2);
     assert_eq!(config.runtime_limits().target_memory_mb(), 2_048);
     assert_eq!(config.runtime_limits().memory_soft_limit_mb(), 1_400);
@@ -108,8 +111,8 @@ fn environment_name_and_fingerprint_must_match_the_process_identity() {
 fn unknown_semantic_versions_fail_closed() {
     for (current, unknown, field) in [
         (
-            "ironpilot-config-v1",
             "ironpilot-config-v2",
+            "ironpilot-config-v3",
             "schema_version",
         ),
         (
@@ -118,14 +121,14 @@ fn unknown_semantic_versions_fail_closed() {
             "versions.market_features",
         ),
         (
-            "strategy-space-v1-vs",
-            "strategy-space-v2",
-            "versions.strategy_space",
+            "ironpilot-ai-decision-context-v1",
+            "ironpilot-ai-decision-context-v2",
+            "versions.ai_decision_context",
         ),
         (
-            "ironpilot-risk-rules-v1",
-            "ironpilot-risk-rules-v2",
-            "versions.risk_rules",
+            "ai_trading_plan: \"3.0\"",
+            "ai_trading_plan: \"4.0\"",
+            "versions.ai_trading_plan",
         ),
     ] {
         let yaml = VALID_YAML.replacen(current, unknown, 1);
@@ -198,19 +201,19 @@ fn yaml_contract_rejects_unknown_duplicate_and_multiple_documents() {
     assert!(parse_and_validate_yaml(&unknown, &identity()).is_err());
 
     let duplicate = VALID_YAML.replacen(
-        "schema_version: ironpilot-config-v1",
-        "schema_version: ironpilot-config-v1\nschema_version: ironpilot-config-v1",
+        "schema_version: ironpilot-config-v2",
+        "schema_version: ironpilot-config-v2\nschema_version: ironpilot-config-v2",
         1,
     );
     assert!(parse_and_validate_yaml(&duplicate, &identity()).is_err());
 
-    let multiple = format!("{VALID_YAML}\n---\nschema_version: ironpilot-config-v1\n");
+    let multiple = format!("{VALID_YAML}\n---\nschema_version: ironpilot-config-v2\n");
     assert!(parse_and_validate_yaml(&multiple, &identity()).is_err());
 
     let alias = VALID_YAML
         .replace(
-            "schema_version: ironpilot-config-v1",
-            "schema_version: &schema ironpilot-config-v1",
+            "schema_version: ironpilot-config-v2",
+            "schema_version: &schema ironpilot-config-v2",
         )
         .replace(
             "market_features: ironpilot-market-features-v1",
@@ -363,10 +366,7 @@ fn testnet_and_live_permissions_are_not_authorized() {
 fn hot_reload_rejects_permission_instrument_and_resource_expansion() {
     let observe_yaml = VALID_YAML
         .replace("execution_mode: paper", "execution_mode: observe_only")
-        .replace(
-            "ai_strategy_decisions: true",
-            "ai_strategy_decisions: false",
-        )
+        .replace("ai_trading_plans: true", "ai_trading_plans: false")
         .replace("target_cpu_cores: 2", "target_cpu_cores: 1");
     let current =
         parse_and_validate_yaml(&observe_yaml, &identity()).expect("conservative config is valid");
@@ -382,15 +382,14 @@ fn hot_reload_rejects_permission_instrument_and_resource_expansion() {
         })
     );
 
-    let ai_candidate = parse_yaml_config(&observe_yaml.replace(
-        "ai_strategy_decisions: false",
-        "ai_strategy_decisions: true",
-    ))
+    let ai_candidate = parse_yaml_config(
+        &observe_yaml.replace("ai_trading_plans: false", "ai_trading_plans: true"),
+    )
     .expect("candidate parses");
     assert_eq!(
         current.validate_reload(ai_candidate, &identity()),
         Err(ConfigValidationError::PermissionExpansion {
-            field: "permissions.ai_strategy_decisions"
+            field: "permissions.ai_trading_plans"
         })
     );
 
@@ -427,10 +426,7 @@ fn hot_reload_accepts_only_monotonic_restrictions() {
         parse_and_validate_yaml(&two_instruments, &identity()).expect("current config is valid");
     let restricted = VALID_YAML
         .replace("execution_mode: paper", "execution_mode: observe_only")
-        .replace(
-            "ai_strategy_decisions: true",
-            "ai_strategy_decisions: false",
-        )
+        .replace("ai_trading_plans: true", "ai_trading_plans: false")
         .replace("target_cpu_cores: 2", "target_cpu_cores: 1")
         .replace("daily_call_limit: 40", "daily_call_limit: 20")
         .replace(

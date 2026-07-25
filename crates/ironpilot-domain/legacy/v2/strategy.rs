@@ -1,3 +1,5 @@
+//! Historical v2 Strategy Space implementation. Not compiled into the v3 domain crate.
+
 use core::fmt;
 
 use serde::{Deserialize, Serialize};

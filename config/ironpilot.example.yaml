@@ -1,4 +1,4 @@
-schema_version: ironpilot-config-v1
+schema_version: ironpilot-config-v2
 
 environment:
   name: development
@@ -6,12 +6,12 @@ environment:
 
 permissions:
   execution_mode: paper
-  ai_strategy_decisions: true
+  ai_trading_plans: true
 
 versions:
   market_features: ironpilot-market-features-v1
-  strategy_space: strategy-space-v1-vs
-  risk_rules: ironpilot-risk-rules-v1
+  ai_decision_context: ironpilot-ai-decision-context-v1
+  ai_trading_plan: "3.0"
 
 instruments:
   - id: bybit:spot:BTCUSDT

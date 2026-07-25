@@ -2,7 +2,9 @@
 
 > Superseded implementation evidence: DEVELOPMENT_PLAN v3 and ADR-0006 remove
 > this v2 Risk Engine from the active trading path. Keep this document and its
-> commit as historical evidence only. `P3-12` owns safe code/schema retirement.
+> commit as historical evidence only. `P3-12` moved the source and tests under
+> `crates/ironpilot-domain/legacy/v2`, removed them from the compiled public
+> domain, and made the legacy SQLite evidence tables immutable.
 
 `P3-02` implements the pure-domain `ironpilot-risk-rules-v1` contract. This
 document records the implemented interface and evidence; it does not amend

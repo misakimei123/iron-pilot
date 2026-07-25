@@ -75,8 +75,7 @@ impl SystemState {
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum TradePlanState {
     Proposed,
-    Materialized,
-    RiskApproved,
+    Accepted,
     EntryPending,
     Active,
     ExitPending,
@@ -87,10 +86,9 @@ pub enum TradePlanState {
 }
 
 impl TradePlanState {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 9] = [
         Self::Proposed,
-        Self::Materialized,
-        Self::RiskApproved,
+        Self::Accepted,
         Self::EntryPending,
         Self::Active,
         Self::ExitPending,
@@ -106,16 +104,14 @@ impl TradePlanState {
             (self, next),
             (
                 Self::Proposed,
-                Self::Materialized | Self::Rejected | Self::Cancelled
+                Self::Accepted | Self::Rejected | Self::Cancelled
             ) | (
-                Self::Materialized,
-                Self::RiskApproved | Self::Rejected | Self::Cancelled
-            ) | (Self::RiskApproved, Self::EntryPending | Self::Cancelled)
-                | (
-                    Self::EntryPending,
-                    Self::Active | Self::Cancelled | Self::RecoveryRequired
-                )
-                | (Self::Active, Self::ExitPending | Self::RecoveryRequired)
+                Self::Accepted,
+                Self::EntryPending | Self::Active | Self::Closed | Self::Cancelled
+            ) | (
+                Self::EntryPending,
+                Self::Active | Self::Cancelled | Self::RecoveryRequired
+            ) | (Self::Active, Self::ExitPending | Self::RecoveryRequired)
                 | (Self::ExitPending, Self::Closed | Self::RecoveryRequired)
                 | (
                     Self::RecoveryRequired,
