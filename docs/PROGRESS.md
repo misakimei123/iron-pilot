@@ -19,12 +19,13 @@
 
 ## Current Focus
 
-- Current phase: Phase A — Minimal Safety Kernel
+- Current phase: Phase B — Market to AI
 - In progress: None
 - Ready:
-  - P2-01
+  - P2-02
+  - P3-01
 - Blocked: None
-- Next recommended task: P2-01
+- Next recommended task: P2-02
 
 ## Task Status
 
@@ -38,11 +39,11 @@
 | `P1-03` | `DONE` | 2026-07-25 | 2026-07-25 | `62cda475f2d5d7d447264ad916130b3e8cddce9d` | 严格 YAML/环境加载；环境指纹与版本校验；1–3 个 Spot 标的；2C2G 上限；权限单调热加载；33 项测试；cargo-deny；Gitleaks | 未修改开发计划；未批准任何阶段 Gate |
 | `P1-04` | `DONE` | 2026-07-25 | 2026-07-25 | `05dba297c7120d6e9e7fd01b06d3b3ad25c67413` | SQLx migration/WAL；关键状态、审计与 outbox 原子写；append-only 触发器；租约隔离与过期接管；备份完整性和恢复；6 项专项测试、39 项全工作区测试及全部质量门禁 | 未修改开发计划；未批准任何阶段 Gate |
 | `P1-05` | `DONE` | 2026-07-25 | 2026-07-25 | `24e7e87ea698e749c1ffad423136e36655ce3f31` | Tokio 有界任务监督与 watch 取消；1024/256 有界队列和 correlation ID；饱和/关闭不静默丢失；可信健康快照；RSS/CPU 采样；1400 MiB 软门槛降级；协作/强制 shutdown；5 项专项测试、44 项全工作区测试及全部质量门禁 | 未修改开发计划；未批准任何阶段 Gate |
-| `P2-01` | `READY` | — | — | — | — | `P1-03` 已完成 |
-| `P2-02` | `PLANNED` | — | — | — | — | — |
+| `P2-01` | `DONE` | 2026-07-25 | 2026-07-25 | `ffab892dad1318633f6665dcbb39b14900fca10c` | Bybit fixtures、TTL/hash、错误分类、在线只读 smoke、52 项全工作区测试及全部质量门禁 | 未修改开发计划；未批准任何阶段 Gate |
+| `P2-02` | `READY` | — | — | — | — | `P2-01`,`P1-05` 已完成 |
 | `P2-03` | `PLANNED` | — | — | — | — | — |
 | `P2-04` | `PLANNED` | — | — | — | — | — |
-| `P3-01` | `PLANNED` | — | — | — | — | — |
+| `P3-01` | `READY` | — | — | — | — | `P1-04`,`P2-01` 已完成 |
 | `P3-02` | `PLANNED` | — | — | — | — | — |
 | `P3-09` | `PLANNED` | — | — | — | — | — |
 | `P3-03` | `PLANNED` | — | — | — | — | — |
@@ -136,9 +137,16 @@ None.
 - 证据：5 项运行时专项测试覆盖队列容量与饱和、可信健康、内存软门槛、当前进程 RSS/CPU、任务上限、关键任务失败、协作与强制 shutdown；全工作区 44 项测试通过；`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo build --workspace --all-targets --locked`、`cargo metadata --locked`、cargo-deny advisories/bans/licenses/sources 和 Gitleaks 8.30.1 历史扫描全部通过；`docs/DEVELOPMENT_PLAN.md` 零差异。
 - 已知限制：本 Task 提供运行时监督与健康内核，不实现后续行情接入、交易逻辑或外部健康接口；不批准任何阶段 Gate。
 
+### P2-01 — Bybit 公共 REST 元数据
+
+- 结果：评估官方 SDK 后采用最薄 `reqwest` public adapter；实现 Bybit 服务器时间、1–3 个 Spot 标的交易状态与精确价格/数量/金额/动态价格限制规则；Bybit DTO 保持在 adapter 内部，输出为领域合同；动态规则携带版本化 SHA-256 hash、6 小时默认 TTL 和 24 小时硬上限；HTTP、`retCode`、超时、限流、访问拒绝、无效响应和合同违规均有保守分类。
+- Commit：`ffab892dad1318633f6665dcbb39b14900fca10c`。
+- 证据：8 项 P2-01 fixture/合同测试覆盖服务器时间整数精度、精确十进制、Spot 无分页 cursor、规则 hash 顺序/表示规范化、TTL 过期边界、限流分类、请求上限和 HTTPS origin；全工作区 52 项测试通过；Bybit 主网公共只读 `server time` 与 `BTCUSDT` instruments smoke 返回 `retCode=0`、`Trading` 和预期精度字段；`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo build --workspace --all-targets --locked`、`cargo metadata --locked --no-deps`、cargo-deny 0.19.4 advisories/bans/licenses/sources、Gitleaks 8.30.1 历史与源码工作树扫描全部通过；`docs/DEVELOPMENT_PLAN.md` 零差异。
+- 已知限制：本 Task 只实现公共 REST 元数据，不包含 WebSocket、私有接口、自动重试、持久化缓存、交易逻辑或执行权限；调用方必须在 TTL 到期前刷新或按过期规则 fail closed；不批准任何阶段 Gate。
+
 ## Next Action
 
-Execute P2-01 next.
+Execute P2-02 next.
 
 以上内容是依据 `docs/DEVELOPMENT_PLAN.md` 静态依赖生成的进度建议，不改变任何 Task 依赖。
 
