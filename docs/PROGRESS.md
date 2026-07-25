@@ -19,12 +19,13 @@
 
 ## Current Focus
 
-- Current phase: Phase C — AI to Paper
+- Current phase: Phase C — AI-Dominant Paper
 - In progress: None
 - Ready:
-  - P3-12
+  - P3-03
+  - P3-13
 - Blocked: None
-- Next recommended task: P3-12
+- Next recommended task: P3-03
 
 ## Task Status
 
@@ -44,12 +45,12 @@
 | `P2-03` | `DONE` | 2026-07-25 | 2026-07-25 | `632cc6f82c1b2f0c9523ffe4a08b8522491f69a7` | `ironpilot-market-features-v1`、双周期完整性、实时价差、稳定 snapshot/event hash、可解释 Prefilter、TTL/去重/冷却/预算；13 项专项测试、73 项全工作区测试及全部质量门禁 | 未修改开发计划；未批准任何阶段 Gate |
 | `P2-04` | `DONE` | 2026-07-25 | 2026-07-25 | `67ab2afefc034022a853755a1914094147730bbb` | `ironpilot-market-replay-v1` manifest/dataset/report hash、固定 clock/seed、`strategy-space-v1-vs` 绑定、future-data 隔离；9 项专项测试、82 项全工作区测试及全部质量门禁 | 未修改开发计划；未批准任何阶段 Gate |
 | `P3-01` | `DONE` | 2026-07-25 | 2026-07-25 | `156adcc66c8b1cead0f2619d9d92e203759986ab` | `ironpilot-portfolio-v1`、受管数量卖出边界、余额差异阻止新开仓、Fill/ManagedLot 原子幂等与对账审计；10 项专项测试、92 项全工作区测试及全部质量门禁 | 未修改开发计划；未批准任何阶段 Gate |
-| `P3-02` | `DONE` | 2026-07-25 | 2026-07-25 | `be3bb43855d3b92398c965203cade3e199e08c6b` | v2 `ironpilot-risk-rules-v1` 历史实现与原验收证据 | v3 遗留，不得进入活动链；由 P3-12 安全退役，历史证据保留 |
+| `P3-02` | `DONE` | 2026-07-25 | 2026-07-25 | `be3bb43855d3b92398c965203cade3e199e08c6b` | v2 `ironpilot-risk-rules-v1` 历史实现与原验收证据 | v3 遗留，不得进入活动链；已由 P3-12 安全退役，历史证据保留 |
 | `P3-09` | `CANCELLED` | — | — | — | DEVELOPMENT_PLAN v3.0.0；ADR-0006 | 未开始实现；Materializer 与 AI 主导交易权限冲突 |
-| `P3-12` | `READY` | — | — | — | — | v3 活动链的下一项 Task |
-| `P3-03` | `PLANNED` | — | — | — | — | — |
+| `P3-12` | `DONE` | 2026-07-25 | 2026-07-25 | `117dad5dede912b3850b93ff8bf47404bde32a84` | `AITradingPlan v3` 合同；v2 源码/API/状态/配置隔离；Replay v2 版本证据；遗留 SQLite 表只读封存；8 项专项测试与全量门禁 | 未修改开发计划；未批准任何阶段 Gate |
+| `P3-03` | `READY` | — | — | — | — | P3-12 完成后依赖已满足 |
 | `P3-04` | `PLANNED` | — | — | — | — | — |
-| `P3-13` | `PLANNED` | — | — | — | — | — |
+| `P3-13` | `READY` | — | — | — | — | P3-12 完成后依赖已满足 |
 | `P3-05` | `PLANNED` | — | — | — | — | — |
 | `P3-10A` | `PLANNED` | — | — | — | — | — |
 | `P3-06` | `PLANNED` | — | — | — | — | — |
@@ -109,7 +110,7 @@ None.
 - 结果：依据用户明确确认，将权威主链修订为完整 Market/Account Context → DeepSeek `AITradingPlan v3` → 只接受或拒绝的 Execution Validation/User Authorization → 忠实 TradePlan/Execution；取消活动链中的 Strategy Space 白名单、确定性 Materializer 和后置策略型 Risk Engine；AI 直接决定精确 entry、quantity、stop、take-profit 和正常持仓管理。
 - Commit：`93ba9018a50bb49a215eca07e387552d51791a86`。
 - 证据：DEVELOPMENT_PLAN 版本提升至 3.0.0；新增 ADR-0006 并 supersede ADR-0005；同步 ADR-0002/0003/0004、`CONTEXT.md` 和 v2 历史文档标记；35 个 Task 定义、32 个活动图节点、全部直接依赖逐项一致；`AITradingPlan v3` JSON 可解析；Task 引用、ADR 相对链接、遗留 P3-02/P3-09 隔离和 `git diff --check` 通过。
-- 已知限制：本 Task 只完成计划、ADR、词汇和历史边界修订，没有删除 v2 代码或数据库结构，也没有实现 `AITradingPlan v3`；P3-12 负责后续安全迁移；未批准任何阶段 Gate。
+- 已知限制：本 Task 只完成计划、ADR、词汇和历史边界修订，当时没有删除 v2 代码或数据库结构，也没有实现 `AITradingPlan v3`；其后由 P3-12 完成安全迁移；未批准任何阶段 Gate。
 
 ### P1-01 — Rust 工程骨架与质量门禁
 
@@ -186,11 +187,19 @@ None.
 - 结果：实现 `ironpilot-risk-rules-v1` 纯领域合同；Risk 输入必须绑定本地已验证的 `strategy-space-v1-vs` Intent、原始 decision/snapshot/instrument/action、物化算法版本与不可变 hash。裁决结果封闭为 `APPROVE`、`ADJUST_DOWN`、`REJECT`、`REDUCE_ONLY`、`HALT_SYMBOL`、`HALT_SYSTEM`；只有批准或向下调整能产生私有构造的 `RiskAuthorization`，并保留原策略身份且数量永不增加。Portfolio 差异、活动 TradePlan 上限、系统/标的降权及硬上限破坏均 fail closed；决策 hash 绑定全部裁决输入、上下文、结果和原因。
 - Commit：`be3bb43855d3b92398c965203cade3e199e08c6b`。
 - 证据：10 项 P3-02 专项测试覆盖合法追溯、只降不升、零额度、Portfolio 差异、活动计划上限与硬上限破坏、系统/标的降权、非 `strategy-space-v1-vs`/非 `OPEN_LONG` 输入拒绝、六种结果封闭、确定性 hash 及授权数量属性测试；全工作区 102 项测试通过，1 项既有 Bybit 线上 WSS 只读测试保持显式忽略；`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo test --workspace --all-targets --locked`、`cargo build --workspace --all-targets --locked`、`cargo metadata --locked --no-deps`、cargo-deny 0.19.4 advisories/bans/licenses/sources、Gitleaks 8.30.1 Git 历史与本次源码工作树扫描、`git diff --check` 全部通过；`docs/DEVELOPMENT_PLAN.md` 零差异。
-- 已知限制：本段结果与证据属于 v2 历史。DEVELOPMENT_PLAN v3.0.0 和 ADR-0006 已禁止该 Risk Engine 进入活动链；P3-12 负责安全退役其代码/Schema 并保留历史审计。本 Task 不批准任何阶段 Gate。
+- 已知限制：本段结果与证据属于 v2 历史。DEVELOPMENT_PLAN v3.0.0 和 ADR-0006 已禁止该 Risk Engine 进入活动链；P3-12 已安全退役其活动代码/API并只读封存遗留 Schema，历史审计继续保留。本 Task 不批准任何阶段 Gate。
+
+### P3-12 — AITradingPlan v3 合同与 v2 权限迁移
+
+- 结果：冻结严格 `AITradingPlan v3` 领域合同，AI 可直接表达 `OPEN_LONG`、`NO_TRADE`、`HOLD`、`CANCEL_ENTRY`、`MODIFY_PROTECTION`、`REDUCE` 与 `EXIT`，并原生携带精确 order/quantity/stop/take-profit/validity/management、声明最大亏损、复评和叙事；全部数值使用精确十进制字符串，未知字段、浮点、非法单位、非 Spot、`OPEN_SHORT` 和动作字段错配 fail closed；计划生成稳定 canonical hash，活动领域不提供本地策略构造器。
+- 迁移：将 v2 Strategy Space、Materializer 与确定性 Risk Engine 源码/测试移入非编译 `legacy/v2` 历史目录并移出公共 API；TradePlan 状态删除 `MATERIALIZED`/`RISK_APPROVED`，改为 `PROPOSED → ACCEPTED`；配置升级为 `ironpilot-config-v2`，绑定 AI Decision Context 与 AITradingPlan 版本；Replay 升级为 v2 manifest/report 并用 Context/Plan 版本证据替代 Strategy Space；SQLite 保留三个 v2 表，但以 9 个触发器禁止新增、修改和删除。
+- Commit：`117dad5dede912b3850b93ff8bf47404bde32a84`。
+- 证据：7 项 `AITradingPlan v3` 合同测试和 1 项遗留表封存测试覆盖完整方案 roundtrip、7 个动作、精确参数与稳定 hash、未知字段、浮点/单位、Spot 非法方向、动作字段、v2 输入隔离、活动 API 无旧权限模型、TradePlan 旧状态拒绝、Replay v3 版本绑定及数据库写入封存；全工作区 92 项测试通过，1 项既有 Bybit 线上 WSS 只读测试保持显式忽略；`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo test --workspace --all-targets --locked`、`cargo build --workspace --all-targets --locked`、`cargo metadata --locked --no-deps`、cargo-deny advisories/bans/licenses/sources、Gitleaks 8.30.1 Git 历史与源码工作树扫描、v3 活动权限/Replay/遗留证据静态断言和 `git diff --check` 全部通过；`docs/DEVELOPMENT_PLAN.md` 零差异。
+- 已知限制：本 Task 只建立 AI 方案合同和安全迁移边界，不构建完整 Decision Context/TradePlan Ledger、不调用 DeepSeek、不执行 Validator 或订单；分别由 P3-03、P3-04、P3-13 和 P3-05 完成。本 Task 不批准任何阶段 Gate。
 
 ## Next Action
 
-Execute P3-12 next.
+Execute P3-03 next. P3-13 is also READY and remains independent until its downstream dependencies converge.
 
 以上内容是依据 `docs/DEVELOPMENT_PLAN.md` 静态依赖生成的进度建议，不改变任何 Task 依赖。
 
