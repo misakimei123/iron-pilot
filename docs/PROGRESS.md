@@ -22,10 +22,9 @@
 - Current phase: Phase A — Minimal Safety Kernel
 - In progress: None
 - Ready:
-  - P1-05
   - P2-01
 - Blocked: None
-- Next recommended task: P1-05
+- Next recommended task: P2-01
 
 ## Task Status
 
@@ -38,7 +37,7 @@
 | `P1-02` | `DONE` | 2026-07-25 | 2026-07-25 | `a2d2f4a9ad2851cb9443606942f274e6fa16a914` | 精确 Decimal、稳定 ID、Instrument 与 Strategy Intent 契约测试；三组状态机属性测试；Rust 全门禁；cargo-deny；Gitleaks；无浮点领域类型断言 | 未修改开发计划；未批准任何阶段 Gate |
 | `P1-03` | `DONE` | 2026-07-25 | 2026-07-25 | `62cda475f2d5d7d447264ad916130b3e8cddce9d` | 严格 YAML/环境加载；环境指纹与版本校验；1–3 个 Spot 标的；2C2G 上限；权限单调热加载；33 项测试；cargo-deny；Gitleaks | 未修改开发计划；未批准任何阶段 Gate |
 | `P1-04` | `DONE` | 2026-07-25 | 2026-07-25 | `05dba297c7120d6e9e7fd01b06d3b3ad25c67413` | SQLx migration/WAL；关键状态、审计与 outbox 原子写；append-only 触发器；租约隔离与过期接管；备份完整性和恢复；6 项专项测试、39 项全工作区测试及全部质量门禁 | 未修改开发计划；未批准任何阶段 Gate |
-| `P1-05` | `READY` | — | — | — | — | `P1-01`,`P1-04` 已完成 |
+| `P1-05` | `DONE` | 2026-07-25 | 2026-07-25 | `24e7e87ea698e749c1ffad423136e36655ce3f31` | Tokio 有界任务监督与 watch 取消；1024/256 有界队列和 correlation ID；饱和/关闭不静默丢失；可信健康快照；RSS/CPU 采样；1400 MiB 软门槛降级；协作/强制 shutdown；5 项专项测试、44 项全工作区测试及全部质量门禁 | 未修改开发计划；未批准任何阶段 Gate |
 | `P2-01` | `READY` | — | — | — | — | `P1-03` 已完成 |
 | `P2-02` | `PLANNED` | — | — | — | — | — |
 | `P2-03` | `PLANNED` | — | — | — | — | — |
@@ -130,11 +129,16 @@ None.
 - 证据：6 项存储专项测试覆盖 migration/WAL、事务回滚、审计更新/删除拒绝、第二实例拒绝、租约过期接管和备份恢复；全工作区 39 项测试通过；`cargo fmt --all -- --check`；`cargo clippy --workspace --all-targets --locked -- -D warnings`；`cargo build --workspace --all-targets --locked`；`cargo metadata --locked`；cargo-deny advisories/bans/licenses/sources 全部通过；Gitleaks 8.30.1 历史与源码工作树扫描通过；`docs/DEVELOPMENT_PLAN.md` 零差异。
 - 已知限制：本 Task 只提供 Vertical Slice 前持久化内核和核心表，不实现后续业务 Repository、运行时 supervisor、交易所访问、Risk 或 Execution；备份是本地原型，不替代后续长期运行的保留、轮换和恢复演练；不批准任何阶段 Gate。
 
+### P1-05 — 可观测性与运行时监督
+
+- 结果：实现 Tokio 有界任务 supervisor、`watch` 协作取消和超时强制收敛；行情/关键事件队列分别采用配置冻结的 1024/256 容量，溢出或关闭会返还原事件并进入明确的 degrade/halt；事件携带 `CorrelationId`；健康快照同时报告资源新鲜度、RSS、CPU、队列深度/高水位和监督任务数，资源样本缺失/过期或 RSS 超过 1400 MiB 时禁止新 AI 与新开仓。
+- Commit：`24e7e87ea698e749c1ffad423136e36655ce3f31`。
+- 证据：5 项运行时专项测试覆盖队列容量与饱和、可信健康、内存软门槛、当前进程 RSS/CPU、任务上限、关键任务失败、协作与强制 shutdown；全工作区 44 项测试通过；`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo build --workspace --all-targets --locked`、`cargo metadata --locked`、cargo-deny advisories/bans/licenses/sources 和 Gitleaks 8.30.1 历史扫描全部通过；`docs/DEVELOPMENT_PLAN.md` 零差异。
+- 已知限制：本 Task 提供运行时监督与健康内核，不实现后续行情接入、交易逻辑或外部健康接口；不批准任何阶段 Gate。
+
 ## Next Action
 
-Execute P1-05 next.
-
-P2-01 is also READY and may proceed independently.
+Execute P2-01 next.
 
 以上内容是依据 `docs/DEVELOPMENT_PLAN.md` 静态依赖生成的进度建议，不改变任何 Task 依赖。
 
