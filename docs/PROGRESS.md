@@ -22,9 +22,10 @@
 - Current phase: Phase C — AI to Paper
 - In progress: None
 - Ready:
-  - P3-01
+  - P3-02
+  - P3-09
 - Blocked: None
-- Next recommended task: P3-01
+- Next recommended task: P3-02
 
 ## Task Status
 
@@ -42,9 +43,9 @@
 | `P2-02` | `DONE` | 2026-07-25 | 2026-07-25 | `8bc805aed916df1a56ef4472484ad3bfc5ed1702` | 1–3 标的确定性订阅与重订阅；heartbeat、去重、乱序、重连、freshness 和显式 backpressure；8 项专项测试、60 项全工作区测试及全部质量门禁 | 未修改开发计划；未批准任何阶段 Gate |
 | `P2-03` | `DONE` | 2026-07-25 | 2026-07-25 | `632cc6f82c1b2f0c9523ffe4a08b8522491f69a7` | `ironpilot-market-features-v1`、双周期完整性、实时价差、稳定 snapshot/event hash、可解释 Prefilter、TTL/去重/冷却/预算；13 项专项测试、73 项全工作区测试及全部质量门禁 | 未修改开发计划；未批准任何阶段 Gate |
 | `P2-04` | `DONE` | 2026-07-25 | 2026-07-25 | `67ab2afefc034022a853755a1914094147730bbb` | `ironpilot-market-replay-v1` manifest/dataset/report hash、固定 clock/seed、`strategy-space-v1-vs` 绑定、future-data 隔离；9 项专项测试、82 项全工作区测试及全部质量门禁 | 未修改开发计划；未批准任何阶段 Gate |
-| `P3-01` | `READY` | — | — | — | — | `P1-04`,`P2-01` 已完成 |
-| `P3-02` | `PLANNED` | — | — | — | — | — |
-| `P3-09` | `PLANNED` | — | — | — | — | — |
+| `P3-01` | `DONE` | 2026-07-25 | 2026-07-25 | `156adcc66c8b1cead0f2619d9d92e203759986ab` | `ironpilot-portfolio-v1`、受管数量卖出边界、余额差异阻止新开仓、Fill/ManagedLot 原子幂等与对账审计；10 项专项测试、92 项全工作区测试及全部质量门禁 | 未修改开发计划；未批准任何阶段 Gate |
+| `P3-02` | `READY` | — | — | — | — | `P1-02`,`P3-01` 已完成 |
+| `P3-09` | `READY` | — | — | — | — | `P1-02`,`P2-03`,`P3-01` 已完成 |
 | `P3-03` | `PLANNED` | — | — | — | — | — |
 | `P3-04` | `PLANNED` | — | — | — | — | — |
 | `P3-05` | `PLANNED` | — | — | — | — | — |
@@ -164,9 +165,16 @@ None.
 - 证据：9 项 P2-04 专项测试覆盖时钟对齐、同 manifest 两次 report/output hash 完全一致、固定 Strategy Space/种子绑定、future candle/book 隔离、dataset hash 不匹配失败、合法 JSON 且无新闻依赖或绩效结论字段、跨标的规范排序、数据边界/顺序 fail-closed 及复用 Feature Engine 的 warm-up 门槛；全工作区 82 项测试通过，1 项既有 Bybit 线上 WSS 只读测试保持显式忽略；`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo build --workspace --all-targets --locked`、`cargo metadata --locked --no-deps`、cargo-deny advisories/bans/licenses/sources、Gitleaks 8.30.1 Git 历史与源码工作树扫描全部通过；`docs/DEVELOPMENT_PLAN.md` 零差异。
 - 已知限制：本 Task 只复现市场 Snapshot 与 Eligibility Event，不执行订单、不生成持仓或绩效评估，也不实现后续 Minimal Historical Harness；不批准任何阶段 Gate。
 
+### P3-01 — Portfolio、受管资产与对账
+
+- 结果：实现 `ironpilot-portfolio-v1` 纯领域合同，以 P2-01 已验证 Spot Instrument Rules 绑定 Fill 的标的及 base/quote 资产；Portfolio Snapshot 明确区分交易所 available/locked/total、本地预期、可证明受管数量、未知盈余和短缺并生成稳定 hash，任何余额差异均禁止新开仓；卖出授权不能超过受管数量或交易所可用数量。SQLite 在有效单实例租约下原子写入 Fill、按 `(opened_at, managed_lot_id)` 消耗 ManagedLot 和追加审计，重复相同 Fill/对账 Run 业务效果为 0，幂等键内容冲突和超量卖出 fail closed。
+- Commit：`156adcc66c8b1cead0f2619d9d92e203759986ab`。
+- 证据：10 项 P3-01 专项测试覆盖 Instrument Rules 资产绑定、买卖 Fill 合同、受管/可用数量卖出上限、未知资产与短缺分类、任意余额差异阻止新开仓、规范快照 hash、重复/非法资产 fail-closed、买卖 Fill 持久化幂等、幂等键内容冲突、超量卖出事务回滚及对账/审计原子幂等；全工作区 92 项测试通过，1 项既有 Bybit 线上 WSS 只读测试保持显式忽略；`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo build --workspace --all-targets --locked`、`cargo metadata --locked --no-deps`、cargo-deny advisories/bans/licenses/sources、Gitleaks 8.30.1 Git 历史与源码工作树扫描全部通过；`docs/DEVELOPMENT_PLAN.md` 零差异。
+- 已知限制：本 Task 接受上游提供的交易所余额事实但不调用私有 API；不创建订单、不模拟成交、不计算手续费、不裁决 Risk，也不实现 TradePlan 生命周期或任何阶段 Gate 批准。
+
 ## Next Action
 
-Execute P3-01 next.
+Execute P3-02 next.
 
 以上内容是依据 `docs/DEVELOPMENT_PLAN.md` 静态依赖生成的进度建议，不改变任何 Task 依赖。
 
