@@ -6,6 +6,7 @@
 #![forbid(unsafe_code)]
 
 mod bybit_public;
+mod bybit_public_websocket;
 mod config;
 mod persistence;
 mod resources;
@@ -14,6 +15,12 @@ pub use bybit_public::{
     BYBIT_MAINNET_PUBLIC_REST_URL, BybitPublicRestClient, BybitPublicRestError,
     DEFAULT_INSTRUMENT_RULES_TTL, INSTRUMENT_RULES_HASH_SCHEMA_V1, MAX_INSTRUMENT_RULES_TTL,
     PublicRestErrorKind,
+};
+pub use bybit_public_websocket::{
+    BYBIT_MAINNET_SPOT_PUBLIC_WEBSOCKET_URL, BestBookSnapshot, BybitMarketEvent,
+    BybitMarketStreamError, BybitPublicWebSocketClient, FeedFreshnessRegistry,
+    FeedFreshnessSnapshot, KlineInterval, KlineUpdate, MarketStreamErrorKind, SubscriptionPlan,
+    SymbolFreshness, TopicFreshness,
 };
 pub use config::{
     CONFIG_PATH_ENV, ENVIRONMENT_FINGERPRINT_ENV, ENVIRONMENT_NAME_ENV, LoadConfigError,

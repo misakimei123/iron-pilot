@@ -18,6 +18,7 @@ allow = [
 ]
 confidence-threshold = 0.93
 exceptions = [
+    { allow = ["CDLA-Permissive-2.0"], crate = "webpki-roots@0.26.11" },
     { allow = ["CDLA-Permissive-2.0"], crate = "webpki-roots@1.0.9" },
 ]
 unused-allowed-license = "allow"
@@ -39,8 +40,14 @@ deny = []
 # transitions. Keep the duplicate exceptions version-pinned and remove them
 # when SQLx converges on one version.
 skip = [
+    { crate = "block-buffer@0.12.1", reason = "Tungstenite 0.30 uses digest 0.11 while SHA-2 and SQLx still use digest 0.10" },
+    { crate = "cpufeatures@0.3.0", reason = "Tungstenite's SHA-1 0.11 graph uses cpufeatures 0.3 while SHA-2 uses 0.2" },
+    { crate = "crypto-common@0.2.2", reason = "Tungstenite's digest 0.11 graph uses crypto-common 0.2 while SHA-2 uses 0.1" },
+    { crate = "digest@0.11.3", reason = "Tungstenite's SHA-1 implementation uses digest 0.11 while SHA-2 and SQLx use digest 0.10" },
+    { crate = "getrandom@0.4.3", reason = "Tungstenite's rand 0.10 graph uses getrandom 0.4 while existing runtime and test graphs use older releases" },
     { crate = "hashbrown@0.16.1", reason = "SQLx 0.9 also requires hashbrown 0.17 through a separate internal path" },
     { crate = "syn@2.0.119", reason = "SQLx 0.9 macros use syn 2 while current Serde and thiserror derives use syn 3" },
+    { crate = "webpki-roots@0.26.11", reason = "Tokio-Tungstenite 0.30 currently selects rustls-webpki roots 0.26 while Reqwest selects 1.0" },
     { crate = "windows-sys@0.52.0", reason = "ring 0.17 uses the older Windows bindings while Tokio and SQLx use windows-sys 0.61" },
 ]
 skip-tree = []
@@ -240,6 +247,34 @@ exact = true
 [[bans.features]]
 crate = "zeroize@1.9.0"
 allow = ["alloc", "default"]
+exact = true
+
+# Tokio-Tungstenite 0.30's handshake and TLS graph activates these upstream
+# defaults. Keep every allowance version-pinned and exact so transport feature
+# drift fails closed.
+[[bans.features]]
+crate = "data-encoding@2.11.0"
+allow = ["alloc", "default", "std"]
+exact = true
+
+[[bans.features]]
+crate = "digest@0.11.3"
+allow = ["alloc", "block-api", "default", "oid"]
+exact = true
+
+[[bans.features]]
+crate = "rand@0.10.2"
+allow = ["alloc", "default", "std", "std_rng", "sys_rng", "thread_rng"]
+exact = true
+
+[[bans.features]]
+crate = "sha1@0.11.0"
+allow = ["alloc", "default", "oid"]
+exact = true
+
+[[bans.features]]
+crate = "thiserror@2.0.19"
+allow = ["default", "std"]
 exact = true
 
 # SQLx 0.9 intentionally uses standard-library defaults across its internal
