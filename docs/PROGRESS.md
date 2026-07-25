@@ -22,10 +22,11 @@
 - Current phase: Phase C — AI-Dominant Paper
 - In progress: None
 - Ready:
-  - P3-03
+  - P3-04
   - P3-13
+  - P3-07A
 - Blocked: None
-- Next recommended task: P3-03
+- Next recommended task: P3-04
 
 ## Task Status
 
@@ -48,13 +49,13 @@
 | `P3-02` | `DONE` | 2026-07-25 | 2026-07-25 | `be3bb43855d3b92398c965203cade3e199e08c6b` | v2 `ironpilot-risk-rules-v1` 历史实现与原验收证据 | v3 遗留，不得进入活动链；已由 P3-12 安全退役，历史证据保留 |
 | `P3-09` | `CANCELLED` | — | — | — | DEVELOPMENT_PLAN v3.0.0；ADR-0006 | 未开始实现；Materializer 与 AI 主导交易权限冲突 |
 | `P3-12` | `DONE` | 2026-07-25 | 2026-07-25 | `117dad5dede912b3850b93ff8bf47404bde32a84` | `AITradingPlan v3` 合同；v2 源码/API/状态/配置隔离；Replay v2 版本证据；遗留 SQLite 表只读封存；8 项专项测试与全量门禁 | 未修改开发计划；未批准任何阶段 Gate |
-| `P3-03` | `READY` | — | — | — | — | P3-12 完成后依赖已满足 |
-| `P3-04` | `PLANNED` | — | — | — | — | — |
+| `P3-03` | `DONE` | 2026-07-25 | 2026-07-25 | `e093bc8c11d7a9927450b6be652eb26eab4c2dd8` | 完整事实 Context/稳定 hash；原始响应与 AI Plan provenance；原子 TradePlan Ledger；8 项专项测试与全量门禁 | 未修改开发计划；未批准任何阶段 Gate |
+| `P3-04` | `READY` | — | — | — | — | P3-03 完成后依赖已满足 |
 | `P3-13` | `READY` | — | — | — | — | P3-12 完成后依赖已满足 |
 | `P3-05` | `PLANNED` | — | — | — | — | — |
 | `P3-10A` | `PLANNED` | — | — | — | — | — |
 | `P3-06` | `PLANNED` | — | — | — | — | — |
-| `P3-07A` | `PLANNED` | — | — | — | — | — |
+| `P3-07A` | `READY` | — | — | — | — | P1-05 与 P3-03 完成后依赖已满足 |
 | `P3-08` | `PLANNED` | — | — | — | — | — |
 | `P3-07B` | `PLANNED` | — | — | — | — | — |
 | `P3-VS` | `PLANNED` | — | — | — | — | — |
@@ -195,11 +196,19 @@ None.
 - 迁移：将 v2 Strategy Space、Materializer 与确定性 Risk Engine 源码/测试移入非编译 `legacy/v2` 历史目录并移出公共 API；TradePlan 状态删除 `MATERIALIZED`/`RISK_APPROVED`，改为 `PROPOSED → ACCEPTED`；配置升级为 `ironpilot-config-v2`，绑定 AI Decision Context 与 AITradingPlan 版本；Replay 升级为 v2 manifest/report 并用 Context/Plan 版本证据替代 Strategy Space；SQLite 保留三个 v2 表，但以 9 个触发器禁止新增、修改和删除。
 - Commit：`117dad5dede912b3850b93ff8bf47404bde32a84`。
 - 证据：7 项 `AITradingPlan v3` 合同测试和 1 项遗留表封存测试覆盖完整方案 roundtrip、7 个动作、精确参数与稳定 hash、未知字段、浮点/单位、Spot 非法方向、动作字段、v2 输入隔离、活动 API 无旧权限模型、TradePlan 旧状态拒绝、Replay v3 版本绑定及数据库写入封存；全工作区 92 项测试通过，1 项既有 Bybit 线上 WSS 只读测试保持显式忽略；`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo test --workspace --all-targets --locked`、`cargo build --workspace --all-targets --locked`、`cargo metadata --locked --no-deps`、cargo-deny advisories/bans/licenses/sources、Gitleaks 8.30.1 Git 历史与源码工作树扫描、v3 活动权限/Replay/遗留证据静态断言和 `git diff --check` 全部通过；`docs/DEVELOPMENT_PLAN.md` 零差异。
-- 已知限制：本 Task 只建立 AI 方案合同和安全迁移边界，不构建完整 Decision Context/TradePlan Ledger、不调用 DeepSeek、不执行 Validator 或订单；分别由 P3-03、P3-04、P3-13 和 P3-05 完成。本 Task 不批准任何阶段 Gate。
+- 已知限制：本 Task 只建立 AI 方案合同和安全迁移边界，当时不构建完整 Decision Context/TradePlan Ledger、不调用 DeepSeek、不执行 Validator 或订单；Context/Ledger 其后由 P3-03 完成，其余分别由 P3-04、P3-13 和 P3-05 完成。本 Task 不批准任何阶段 Gate。
+
+### P3-03 — AI Decision Context 与 TradePlan Ledger
+
+- 结果：实现 `ironpilot-ai-decision-context-v1` 不可变事实合同，固化完整 15m/1h 已闭合 K 线窗口、全部指标/形态、一级盘口、目标 Spot instrument rules、交易所时间与规则 hash、完整 Portfolio 资产、受管持仓、活动订单、用户最大亏损授权、版本/TTL 和 canonical SHA-256；构造时使用原始 K 线与盘口重新计算 `MarketFeatureSnapshot`，任何不一致、不完整窗口、未来/陈旧行情、未来/过期规则、未来账户/订单、重复持仓/订单或非法授权均 fail closed；Context JSON 不包含 action、recommendation、Strategy Space、Eligibility 方向、risk tier、anchor 或本地交易参数。
+- 账本：实现 provider-neutral `AiRawResponse` 和 `AiTradePlanLedgerEntry`，逐项绑定 Context/response/AI plan/TradePlan/action ID 与三层 hash；`OPEN_LONG` 创建 `PROPOSED` TradePlan，`NO_TRADE` 创建终态追溯记录，其余管理动作必须追加到 AI 指定的现有同标的活动计划。SQLite migration 新增 `ai_decision_contexts`、`ai_provider_responses`、`ai_trading_plans` 和 `ai_trade_plan_ledger`；有效单实例租约下以单事务写入 Context、原始响应、解析计划、TradePlan/action、provenance link 与审计，重复相同内容业务效果为 0，ID 内容冲突、第二活动计划、目标计划不可用或审计失败全部回滚；任一 action 可查询回原始 Context/response/plan 及 hash。
+- Commit：`e093bc8c11d7a9927450b6be652eb26eab4c2dd8`。
+- 证据：5 项领域合同测试与 3 项 SQLite 账本测试覆盖完整事实序列、指标/形态/盘口/账户/持仓/订单/rules/最大亏损、输入顺序无关 hash、无本地推荐字段、future-data 与不可复现 Features 拒绝、跨 Context/stale provenance 拒绝、OPEN_LONG/HOLD 追溯、重复零副作用、每标的单活动计划、候选与审计失败完整回滚；全工作区 100 项测试通过，1 项既有 Bybit 线上 WSS 只读测试保持显式忽略；`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo test --workspace --all-targets --locked`、`cargo build --workspace --all-targets --locked`、`cargo metadata --locked --no-deps`、cargo-deny advisories/bans/licenses/sources、Gitleaks 8.30.1 Git 历史与源码工作树扫描、Context 无本地策略/原子账本 Schema/迁移保留静态断言和 `git diff --check` 全部通过；`docs/DEVELOPMENT_PLAN.md` 零差异。
+- 已知限制：本 Task 不构建 DeepSeek request/usage/cost/latency、不执行 `ACCEPT/REJECT`、不生成 OrderIntent 或 Paper 订单；分别由 P3-04、P3-13 和 P3-05 完成。本 Task 不批准任何阶段 Gate。
 
 ## Next Action
 
-Execute P3-03 next. P3-13 is also READY and remains independent until its downstream dependencies converge.
+Execute P3-04 next. P3-13 and P3-07A are also READY and remain independent until downstream dependencies converge.
 
 以上内容是依据 `docs/DEVELOPMENT_PLAN.md` 静态依赖生成的进度建议，不改变任何 Task 依赖。
 
