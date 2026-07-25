@@ -1,0 +1,34 @@
+{
+  "retCode": 0,
+  "retMsg": "OK",
+  "result": {
+    "category": "spot",
+    "nextPageCursor": "",
+    "list": [
+      {
+        "symbolId": 10,
+        "symbol": "ETHUSDT",
+        "baseCoin": "ETH",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "lotSizeFilter": {
+          "basePrecision": "0.00001",
+          "quotePrecision": "0.0000001",
+          "minOrderAmt": "5",
+          "maxLimitOrderQty": "1000",
+          "maxMarketOrderQty": "500",
+          "postOnlyMaxLimitOrderSize": "5000"
+        },
+        "priceFilter": {
+          "tickSize": "0.01"
+        },
+        "riskParameters": {
+          "priceLimitRatioX": "0.005",
+          "priceLimitRatioY": "0.01"
+        }
+      }
+    ]
+  },
+  "retExtInfo": {},
+  "time": 1760027412300
+}

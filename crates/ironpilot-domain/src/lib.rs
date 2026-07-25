@@ -7,6 +7,7 @@
 mod decimal;
 mod ids;
 mod instrument;
+mod market;
 mod state;
 mod strategy;
 
@@ -19,6 +20,10 @@ pub use ids::{
 pub use instrument::{
     Exchange, InstrumentId, InstrumentType, ParseInstrumentIdError, Symbol,
     ValidationError as InstrumentValidationError,
+};
+pub use market::{
+    AssetCode, ExchangeServerTime, InstrumentRulesSnapshot, InstrumentTradingStatus,
+    MarketMetadataValidationError, RulesHash, SpotInstrumentRules, validated_spot_instrument_rules,
 };
 pub use state::{InvalidTransition, OrderState, SystemState, TradePlanState};
 pub use strategy::{

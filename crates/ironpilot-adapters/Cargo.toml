@@ -9,12 +9,15 @@ publish.workspace = true
 ironpilot-application = { version = "0.1.0", path = "../ironpilot-application" }
 ironpilot-domain = { version = "0.1.0", path = "../ironpilot-domain" }
 noyalib = { version = "0.0.16", default-features = false, features = ["minimal"] }
+reqwest = { version = "0.12.28", default-features = false, features = ["rustls-tls-webpki-roots"] }
+serde = { version = "1.0.229", default-features = false, features = ["derive", "std"] }
+serde_json = { version = "1.0.151", default-features = false, features = ["std"] }
+sha2 = { version = "0.10.9", default-features = false }
 sqlx = { version = "0.9.0", default-features = false, features = ["macros", "migrate", "runtime-tokio", "sqlite-bundled"] }
 sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
 tokio = { version = "1.49.0", default-features = false, features = ["sync"] }
 
 [dev-dependencies]
-serde_json = { version = "1.0.151", default-features = false, features = ["std"] }
 tokio = { version = "1.49.0", default-features = false, features = ["macros", "rt-multi-thread", "sync"] }
 
 [lints]

@@ -17,7 +17,9 @@ allow = [
     "Zlib",
 ]
 confidence-threshold = 0.93
-exceptions = []
+exceptions = [
+    { allow = ["CDLA-Permissive-2.0"], crate = "webpki-roots@1.0.9" },
+]
 unused-allowed-license = "allow"
 
 [licenses.private]
@@ -39,6 +41,7 @@ deny = []
 skip = [
     { crate = "hashbrown@0.16.1", reason = "SQLx 0.9 also requires hashbrown 0.17 through a separate internal path" },
     { crate = "syn@2.0.119", reason = "SQLx 0.9 macros use syn 2 while current Serde and thiserror derives use syn 3" },
+    { crate = "windows-sys@0.52.0", reason = "ring 0.17 uses the older Windows bindings while Tokio and SQLx use windows-sys 0.61" },
 ]
 skip-tree = []
 
@@ -122,6 +125,121 @@ exact = true
 [[bans.features]]
 crate = "rustc-hash@2.1.3"
 allow = ["default", "std"]
+exact = true
+
+# Reqwest's minimal Rustls/WebPKI client graph activates upstream standard
+# defaults even though Reqwest itself has default features disabled. Keep every
+# allowance version-pinned and exact so transport or TLS feature drift fails.
+[[bans.features]]
+crate = "base64@0.22.1"
+allow = ["alloc", "default", "std"]
+exact = true
+
+[[bans.features]]
+crate = "bumpalo@3.20.3"
+allow = ["default"]
+exact = true
+
+[[bans.features]]
+crate = "futures-channel@0.3.33"
+allow = ["alloc", "default", "futures-sink", "sink", "std"]
+exact = true
+
+[[bans.features]]
+crate = "http@1.4.2"
+allow = ["default", "std"]
+exact = true
+
+[[bans.features]]
+crate = "http-body-util@0.1.4"
+allow = ["default"]
+exact = true
+
+[[bans.features]]
+crate = "httparse@1.10.1"
+allow = ["default", "std"]
+exact = true
+
+[[bans.features]]
+crate = "hyper@1.11.0"
+allow = ["client", "default", "http1"]
+exact = true
+
+[[bans.features]]
+crate = "hyper-util@0.1.20"
+allow = ["client", "client-legacy", "client-proxy", "default", "http1", "tokio"]
+exact = true
+
+[[bans.features]]
+crate = "ipnet@2.12.0"
+allow = ["default", "std"]
+exact = true
+
+[[bans.features]]
+crate = "js-sys@0.3.103"
+allow = ["default", "std", "unsafe-eval"]
+exact = true
+
+[[bans.features]]
+crate = "ring@0.17.14"
+allow = ["alloc", "default", "dev_urandom_fallback"]
+exact = true
+
+[[bans.features]]
+crate = "rustls-pki-types@1.15.1"
+allow = ["alloc", "default", "std"]
+exact = true
+
+[[bans.features]]
+crate = "wasm-bindgen@0.2.126"
+allow = ["default", "std"]
+exact = true
+
+[[bans.features]]
+crate = "wasm-bindgen-futures@0.4.76"
+allow = ["default", "std"]
+exact = true
+
+[[bans.features]]
+crate = "web-sys@0.3.103"
+allow = [
+    "AbortController",
+    "AbortSignal",
+    "Blob",
+    "BlobPropertyBag",
+    "EventTarget",
+    "File",
+    "FormData",
+    "Headers",
+    "ReadableStream",
+    "Request",
+    "RequestCache",
+    "RequestCredentials",
+    "RequestInit",
+    "RequestMode",
+    "Response",
+    "ServiceWorkerGlobalScope",
+    "Window",
+    "WorkerGlobalScope",
+    "default",
+    "std",
+]
+exact = true
+
+[[bans.features]]
+crate = "windows-sys@0.52.0"
+allow = [
+    "default",
+    "Win32",
+    "Win32_Foundation",
+    "Win32_System",
+    "Win32_System_Threading",
+]
+exact = true
+
+[[bans.features]]
+crate = "zeroize@1.9.0"
+allow = ["alloc", "default"]
 exact = true
 
 # SQLx 0.9 intentionally uses standard-library defaults across its internal

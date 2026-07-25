@@ -11,10 +11,12 @@ features are disabled; only the listed features are enabled.
 | Dependency | Pin | Scope / owner | Purpose | License | Maintenance status | Features / resource impact | Exit plan |
 |---|---|---|---|---|---|---|---|
 | `rust_decimal` | `1.42.1` | Runtime / `ironpilot-domain` | Exact decimal values for all domain amounts | MIT | Maintained upstream | `std`; bounded CPU and 16-byte value representation | Replace with an audited fixed-scale integer type while preserving string wire encoding |
-| `serde` | `1.0.229` | Runtime / `ironpilot-domain`, `ironpilot-application` | Closed domain and configuration wire contracts | Apache-2.0 / MIT | Maintained upstream | `derive`, `std`; compile-time derive cost, no I/O or permissions | Replace derives with reviewed manual codecs if the wire layer changes |
+| `serde` | `1.0.229` | Runtime / `ironpilot-domain`, `ironpilot-application`, `ironpilot-adapters` | Closed domain/configuration contracts and private Bybit DTO decoding | Apache-2.0 / MIT | Maintained upstream | `derive`, `std`; compile-time derive cost, no I/O or permissions | Replace derives with reviewed manual codecs if the wire layer changes |
 | `uuid` | `1.24.0` | Runtime / `ironpilot-domain` | Typed stable identifiers | Apache-2.0 / MIT | Maintained upstream | `serde`, `std`; generation features are disabled, no randomness or I/O | Replace with an internal 16-byte identifier while preserving canonical UUID text |
 | `noyalib` | `0.0.16` | Runtime / `ironpilot-adapters` | Strict YAML startup configuration parsing | Apache-2.0 / MIT | Maintained upstream; pre-1.0 API is version-pinned | `minimal` only; pure Rust, configuration input capped at 64 KiB | Replace with another reviewed Serde YAML decoder or a schema-specific parser |
-| `serde_json` | `1.0.151` | Runtime / `ironpilot-application`; Development / `ironpilot-domain`, `ironpilot-adapters` | Structured audit/outbox payloads and JSON contract tests | Apache-2.0 / MIT | Maintained upstream | `std`; payloads are validated as JSON objects before persistence | Replace runtime values with a versioned schema-specific payload enum |
+| `serde_json` | `1.0.151` | Runtime / `ironpilot-application`, `ironpilot-adapters`; Development / `ironpilot-domain` | Structured audit/outbox payloads and bounded Bybit JSON envelope decoding | Apache-2.0 / MIT | Maintained upstream | `std`; adapter response bodies are capped at 256 KiB before decoding | Replace runtime values with versioned schema-specific codecs |
+| `reqwest` | `0.12.28` | Runtime / `ironpilot-adapters` | Thin Bybit V5 public REST transport | Apache-2.0 / MIT | Maintained upstream | `rustls-tls-webpki-roots`; no redirects, 5 s connect timeout, 10 s request timeout, 256 KiB response cap; no credentials or private endpoints | Replace behind the adapter boundary while preserving DTO, timeout and error-classification contracts |
+| `sha2` | `0.10.9` | Runtime / `ironpilot-adapters` | Stable SHA-256 hash for dynamic Spot instrument rules | Apache-2.0 / MIT | Maintained upstream | No default features; hashes only the bounded 1–3 instrument canonical rule set | Replace with a reviewed digest while publishing a new rule-hash schema version |
 | `sqlx` | `0.9.0` | Runtime / `ironpilot-adapters` | SQLite pool, transactions, embedded migrations and typed error boundary | Apache-2.0 / MIT | Maintained upstream | `macros`, `migrate`, `runtime-tokio`, `sqlite-bundled`; pool capped at 4 connections and writes serialized | Replace with a reviewed SQLite adapter while preserving migrations, transaction and repository contracts |
 | `tokio` | `1.53.1` | Runtime and Development / `ironpilot-application`, `ironpilot-adapters` | Bounded task supervision, cancellation, channels, shutdown deadlines, SQLx synchronization and async tests | MIT | Maintained upstream | Runtime `rt`, `sync`, `time`; tests add `macros`, `rt-multi-thread`; tasks and channels are bounded by P1-05 contracts | Replace with another reviewed runtime while preserving bounded queues, cancellation and forced-shutdown behavior |
 | `sysinfo` | `0.39.6` | Runtime / `ironpilot-adapters` | Targeted current-process RSS and CPU sampling for runtime health | MIT | Maintained upstream | `system` only; refreshes the current process rather than the full system; no write or network permissions | Replace with reviewed platform-native process metrics behind the same resource-sample contract |
@@ -35,6 +37,16 @@ version-pinned exceptions for reviewed proc-macro, test, YAML and SQLx/SQLite
 transitive feature sets. SQLx's temporary `hashbrown` and `syn` duplicate
 versions are also pinned with removal reasons; dependency or feature drift
 fails the supply-chain gate.
+
+### P2-01 Bybit client choice
+
+The P2-01 review found no official Bybit Rust SDK in the official V5 examples
+or the Bybit SDK organization listing. The maintained official examples cover
+Python, Java, Go, and Node.js. A third-party trading SDK would add private-order
+surface and domain types that P2-01 does not need, so the implementation uses a
+thin `reqwest` adapter limited to `GET /v5/market/time` and
+`GET /v5/market/instruments-info`. Bybit wire DTOs remain private to
+`ironpilot-adapters`.
 
 ## Workspace boundaries
 
