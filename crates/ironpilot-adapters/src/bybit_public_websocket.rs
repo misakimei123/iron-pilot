@@ -8,7 +8,10 @@ use futures_util::{SinkExt, StreamExt};
 use ironpilot_application::{
     BoundedQueueSender, QueueSendError, RuntimeEvent, ShutdownSignal, UnixMillis,
 };
-use ironpilot_domain::{CorrelationId, DomainDecimal, Exchange, InstrumentId, InstrumentType};
+use ironpilot_domain::{
+    ClosedCandle, CorrelationId, DomainDecimal, Exchange, InstrumentId, InstrumentType,
+    MarketFeatureError, MarketTimeframe, TopOfBook,
+};
 use reqwest::Url;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -133,6 +136,27 @@ impl KlineUpdate {
     pub const fn confirmed(&self) -> bool {
         self.confirmed
     }
+
+    pub fn to_closed_candle(&self) -> Result<ClosedCandle, MarketFeatureError> {
+        let timeframe = match self.interval {
+            KlineInterval::FifteenMinutes => MarketTimeframe::FifteenMinutes,
+            KlineInterval::OneHour => MarketTimeframe::OneHour,
+        };
+        let open_at_unix_millis = u64::try_from(self.start_at.get())
+            .map_err(|_| MarketFeatureError::TimestampOverflow)?;
+        ClosedCandle::new(
+            self.instrument_id.clone(),
+            timeframe,
+            open_at_unix_millis,
+            self.open,
+            self.high,
+            self.low,
+            self.close,
+            self.volume,
+            self.turnover,
+            self.confirmed,
+        )
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -192,6 +216,19 @@ impl BestBookSnapshot {
     #[must_use]
     pub const fn ask_quantity(&self) -> DomainDecimal {
         self.ask_quantity
+    }
+
+    pub fn to_top_of_book(&self, observed_at: UnixMillis) -> Result<TopOfBook, MarketFeatureError> {
+        TopOfBook::new(
+            self.instrument_id.clone(),
+            u64::try_from(self.source_generated_at.get())
+                .map_err(|_| MarketFeatureError::TimestampOverflow)?,
+            u64::try_from(observed_at.get()).map_err(|_| MarketFeatureError::TimestampOverflow)?,
+            self.bid_price,
+            self.bid_quantity,
+            self.ask_price,
+            self.ask_quantity,
+        )
     }
 }
 
@@ -1330,7 +1367,9 @@ mod tests {
         BoundedQueueSender, DeploymentEnvironment, EnvironmentFingerprint, HealthIssue,
         HealthMonitor, RuntimeEvent, RuntimeSupervisor, StartupIdentity, UnixMillis,
     };
-    use ironpilot_domain::{CorrelationId, DomainDecimal, InstrumentId};
+    use ironpilot_domain::{
+        ClosedCandle, CorrelationId, DomainDecimal, InstrumentId, MarketTimeframe,
+    };
     use serde_json::{Value, json};
     use tokio::net::TcpListener;
     use tokio::time::timeout;
@@ -1469,6 +1508,51 @@ mod tests {
                 .observed_at(),
             timestamp(1_672_324_992_000)
         );
+    }
+
+    #[test]
+    fn websocket_payloads_map_to_canonical_market_inputs() {
+        let (mut processor, _freshness, _instrument_id) = processor();
+        let confirmed = KLINE_FIXTURE
+            .replace("1672324800000", "1672325100000")
+            .replace("1672325699999", "1672325999999")
+            .replace("1672324988882", "1672325288882")
+            .replace("\"confirm\": false", "\"confirm\": true");
+        let ProtocolResult::Event(BybitMarketEvent::Kline(update)) = processor
+            .handle_text(&confirmed, timestamp(1_672_324_990_000), "unused")
+            .expect("valid confirmed kline")
+        else {
+            panic!("confirmed kline must be delivered");
+        };
+        let websocket_candle = update
+            .to_closed_candle()
+            .expect("confirmed WebSocket kline must map");
+        let canonical_candle = ClosedCandle::new(
+            update.instrument_id().clone(),
+            MarketTimeframe::FifteenMinutes,
+            u64::try_from(update.start_at().get()).expect("positive fixture timestamp"),
+            update.open(),
+            update.high(),
+            update.low(),
+            update.close(),
+            update.volume(),
+            update.turnover(),
+            true,
+        )
+        .expect("canonical candle must be valid");
+        assert_eq!(websocket_candle, canonical_candle);
+
+        let ProtocolResult::Event(BybitMarketEvent::BestBook(book)) = processor
+            .handle_text(ORDERBOOK_FIXTURE, timestamp(1_672_304_485_000), "unused")
+            .expect("valid orderbook")
+        else {
+            panic!("orderbook must be delivered");
+        };
+        let canonical_book = book
+            .to_top_of_book(timestamp(1_672_304_485_000))
+            .expect("WebSocket orderbook must map");
+        assert_eq!(canonical_book.bid_price(), book.bid_price());
+        assert_eq!(canonical_book.ask_price(), book.ask_price());
     }
 
     #[test]

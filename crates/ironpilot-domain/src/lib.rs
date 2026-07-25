@@ -8,6 +8,7 @@ mod decimal;
 mod ids;
 mod instrument;
 mod market;
+mod market_features;
 mod state;
 mod strategy;
 
@@ -24,6 +25,16 @@ pub use instrument::{
 pub use market::{
     AssetCode, ExchangeServerTime, InstrumentRulesSnapshot, InstrumentTradingStatus,
     MarketMetadataValidationError, RulesHash, SpotInstrumentRules, validated_spot_instrument_rules,
+};
+pub use market_features::{
+    ATR_PERIOD, CandlePattern, ClosedCandle, ContentHash, DONCHIAN_LOWER_PERIOD,
+    DONCHIAN_UPPER_PERIOD, EMA_FAST_PERIOD, EMA_SLOW_PERIOD, EligibilityEvent,
+    EligibilityEventEngine, EligibilityEventKind, EligibilityPolicy, EmaAlignment,
+    FEATURE_CANDLE_WINDOW, KeyLocation, LlmBudgetUsage, MARKET_FEATURES_VERSION_V1,
+    MAX_EVENT_DEDUPLICATION_ENTRIES, MAX_TRACKED_ELIGIBILITY_INSTRUMENTS, MarketDataSource,
+    MarketFeatureEngine, MarketFeatureError, MarketFeatureSnapshot, MarketTimeframe,
+    PatternObservation, PatternSemantic, PrefilterContext, PrefilterDecision,
+    PrefilterRejectionReason, TopOfBook, VOLUME_RATIO_PERIOD, WILDER_PERIOD,
 };
 pub use state::{InvalidTransition, OrderState, SystemState, TradePlanState};
 pub use strategy::{
