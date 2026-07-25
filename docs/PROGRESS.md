@@ -19,13 +19,12 @@
 
 ## Current Focus
 
-- Current phase: Phase B — Market to AI
+- Current phase: Phase C — AI to Paper
 - In progress: None
 - Ready:
-  - P2-04
   - P3-01
 - Blocked: None
-- Next recommended task: P2-04
+- Next recommended task: P3-01
 
 ## Task Status
 
@@ -42,7 +41,7 @@
 | `P2-01` | `DONE` | 2026-07-25 | 2026-07-25 | `ffab892dad1318633f6665dcbb39b14900fca10c` | Bybit fixtures、TTL/hash、错误分类、在线只读 smoke、52 项全工作区测试及全部质量门禁 | 未修改开发计划；未批准任何阶段 Gate |
 | `P2-02` | `DONE` | 2026-07-25 | 2026-07-25 | `8bc805aed916df1a56ef4472484ad3bfc5ed1702` | 1–3 标的确定性订阅与重订阅；heartbeat、去重、乱序、重连、freshness 和显式 backpressure；8 项专项测试、60 项全工作区测试及全部质量门禁 | 未修改开发计划；未批准任何阶段 Gate |
 | `P2-03` | `DONE` | 2026-07-25 | 2026-07-25 | `632cc6f82c1b2f0c9523ffe4a08b8522491f69a7` | `ironpilot-market-features-v1`、双周期完整性、实时价差、稳定 snapshot/event hash、可解释 Prefilter、TTL/去重/冷却/预算；13 项专项测试、73 项全工作区测试及全部质量门禁 | 未修改开发计划；未批准任何阶段 Gate |
-| `P2-04` | `READY` | — | — | — | — | `P2-03`,`P1-04` 已完成 |
+| `P2-04` | `DONE` | 2026-07-25 | 2026-07-25 | `67ab2afefc034022a853755a1914094147730bbb` | `ironpilot-market-replay-v1` manifest/dataset/report hash、固定 clock/seed、`strategy-space-v1-vs` 绑定、future-data 隔离；9 项专项测试、82 项全工作区测试及全部质量门禁 | 未修改开发计划；未批准任何阶段 Gate |
 | `P3-01` | `READY` | — | — | — | — | `P1-04`,`P2-01` 已完成 |
 | `P3-02` | `PLANNED` | — | — | — | — | — |
 | `P3-09` | `PLANNED` | — | — | — | — | — |
@@ -158,9 +157,16 @@ None.
 - 证据：13 项 P2-03 专项测试覆盖冻结指标已知向量、双周期对齐、future/stale/gap/duplicate/unclosed、11 种形态与冲突优先级、扁平动量 fail-closed、WS 输入到规范 candle/book 映射、跨传输与重启 hash 等价、event TTL、去重、冷却、无信息增量、状态解释、预算耗尽及 1024 项去重状态上限；全工作区 73 项测试通过，1 项既有 Bybit 线上 WSS 只读测试保持显式忽略；`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo build --workspace --all-targets --locked`、`cargo metadata --locked --no-deps`、cargo-deny advisories/bans/licenses/sources、Gitleaks 8.30.1 Git 历史与源码工作树扫描全部通过；`docs/DEVELOPMENT_PLAN.md` 零差异。
 - 已知限制：本 Task 只产生只读市场事实和是否允许后续 AI 决策尝试的稀疏事件，不选择方向、策略家族、入场、止损、目标、数量或执行政策；不包含 AI Provider、历史回放、持久化事件账本、交易写操作或任何 Gate 批准。
 
+### P2-04 — 历史回放与可复现快照
+
+- 结果：实现纯领域 `ironpilot-market-replay-v1` 回放合同；不可变 dataset hash 覆盖 1–3 个标的的连续 15m/1h 已闭合 K 线和有序一级盘口，manifest hash 绑定特征版本、`strategy-space-v1-vs`、固定种子、时钟范围与标的集合；固定 15 分钟 replay clock 在每个时点仅向既有 Feature/Eligibility Engine 暴露当时可见数据，并输出稳定的 Snapshot/Event 或拒绝原因报告 hash。
+- Commit：`67ab2afefc034022a853755a1914094147730bbb`。
+- 证据：9 项 P2-04 专项测试覆盖时钟对齐、同 manifest 两次 report/output hash 完全一致、固定 Strategy Space/种子绑定、future candle/book 隔离、dataset hash 不匹配失败、合法 JSON 且无新闻依赖或绩效结论字段、跨标的规范排序、数据边界/顺序 fail-closed 及复用 Feature Engine 的 warm-up 门槛；全工作区 82 项测试通过，1 项既有 Bybit 线上 WSS 只读测试保持显式忽略；`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo build --workspace --all-targets --locked`、`cargo metadata --locked --no-deps`、cargo-deny advisories/bans/licenses/sources、Gitleaks 8.30.1 Git 历史与源码工作树扫描全部通过；`docs/DEVELOPMENT_PLAN.md` 零差异。
+- 已知限制：本 Task 只复现市场 Snapshot 与 Eligibility Event，不执行订单、不生成持仓或绩效评估，也不实现后续 Minimal Historical Harness；不批准任何阶段 Gate。
+
 ## Next Action
 
-Execute P2-04 next.
+Execute P3-01 next.
 
 以上内容是依据 `docs/DEVELOPMENT_PLAN.md` 静态依赖生成的进度建议，不改变任何 Task 依赖。
 
