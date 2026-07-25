@@ -9,6 +9,7 @@ mod ids;
 mod instrument;
 mod market;
 mod market_features;
+mod replay;
 mod state;
 mod strategy;
 
@@ -35,6 +36,11 @@ pub use market_features::{
     MarketFeatureEngine, MarketFeatureError, MarketFeatureSnapshot, MarketTimeframe,
     PatternObservation, PatternSemantic, PrefilterContext, PrefilterDecision,
     PrefilterRejectionReason, TopOfBook, VOLUME_RATIO_PERIOD, WILDER_PERIOD,
+};
+pub use replay::{
+    MARKET_REPLAY_REPORT_VERSION_V1, MARKET_REPLAY_SCHEMA_VERSION_V1, REPLAY_DETERMINISTIC_SEED_V1,
+    ReplayClock, ReplayDataset, ReplayEligibilityOutcome, ReplayError, ReplayHash,
+    ReplayInstrumentData, ReplayManifest, ReplayRecord, ReplayReport, ReplayRunner,
 };
 pub use state::{InvalidTransition, OrderState, SystemState, TradePlanState};
 pub use strategy::{
