@@ -4,9 +4,9 @@
 >
 > This file is the single source of truth for current implementation progress.
 >
-> Plan baseline: DEVELOPMENT_PLAN v2.2.0
+> Plan baseline: DEVELOPMENT_PLAN v3.0.0
 >
-> Plan commit: `000ccf8257f0fb5a1fa0417792710ff654ba1d56`
+> Plan commit: `93ba9018a50bb49a215eca07e387552d51791a86`
 >
 > Last updated: 2026-07-25
 
@@ -22,9 +22,9 @@
 - Current phase: Phase C — AI to Paper
 - In progress: None
 - Ready:
-  - P3-09
+  - P3-12
 - Blocked: None
-- Next recommended task: P3-09
+- Next recommended task: P3-12
 
 ## Task Status
 
@@ -33,6 +33,7 @@
 | `P0-01` | `DONE` | — | 2026-07-24 | `edb5f861d2377b1ee9e95da934acffd226f1f938` | `CONTEXT.md`; `docs/adr/0001-spot-first-mvp.md` 至 `0004-compositional-historical-backtesting.md` | 历史架构基线 |
 | `P0-02` | `DONE` | — | 2026-07-24 | `033de133b42ce9a66b126fd8376fdd60b5b34a77` | `docs/DEVELOPMENT_PLAN.md` v2 重建及后续一致性修订 | 仅完成规划治理，未实施业务 Task |
 | `P0-03` | `DONE` | 2026-07-25 | 2026-07-25 | `98f87db43c9d8c23d563ce8df43d521ea434c924` | `docs/adr/0005-bounded-ai-strategy-authority.md`; ADR-0002/0003/0004 superseded/amended 标记；`CONTEXT.md`; 语义断言与 `git diff --check` | 未修改开发计划；未批准任何阶段 Gate |
+| `P0-04` | `DONE` | 2026-07-25 | 2026-07-25 | `93ba9018a50bb49a215eca07e387552d51791a86` | DEVELOPMENT_PLAN v3.0.0；ADR-0006；Task 表/依赖图/正文/Gate 一致性；AITradingPlan JSON、ADR 链接与 v2 遗留隔离检查 | 独立计划修订，无业务代码；未批准任何阶段 Gate |
 | `P1-01` | `DONE` | 2026-07-25 | 2026-07-25 | `705ca6f7b5aa4602072cc943295c15ae66bb780e` | Rust 质量门禁；空进程 smoke test；cargo-deny；Gitleaks；CI YAML 校验；零第三方 Cargo 依赖断言 | 无业务伪实现；未修改开发计划或批准 Gate |
 | `P1-02` | `DONE` | 2026-07-25 | 2026-07-25 | `a2d2f4a9ad2851cb9443606942f274e6fa16a914` | 精确 Decimal、稳定 ID、Instrument 与 Strategy Intent 契约测试；三组状态机属性测试；Rust 全门禁；cargo-deny；Gitleaks；无浮点领域类型断言 | 未修改开发计划；未批准任何阶段 Gate |
 | `P1-03` | `DONE` | 2026-07-25 | 2026-07-25 | `62cda475f2d5d7d447264ad916130b3e8cddce9d` | 严格 YAML/环境加载；环境指纹与版本校验；1–3 个 Spot 标的；2C2G 上限；权限单调热加载；33 项测试；cargo-deny；Gitleaks | 未修改开发计划；未批准任何阶段 Gate |
@@ -43,10 +44,12 @@
 | `P2-03` | `DONE` | 2026-07-25 | 2026-07-25 | `632cc6f82c1b2f0c9523ffe4a08b8522491f69a7` | `ironpilot-market-features-v1`、双周期完整性、实时价差、稳定 snapshot/event hash、可解释 Prefilter、TTL/去重/冷却/预算；13 项专项测试、73 项全工作区测试及全部质量门禁 | 未修改开发计划；未批准任何阶段 Gate |
 | `P2-04` | `DONE` | 2026-07-25 | 2026-07-25 | `67ab2afefc034022a853755a1914094147730bbb` | `ironpilot-market-replay-v1` manifest/dataset/report hash、固定 clock/seed、`strategy-space-v1-vs` 绑定、future-data 隔离；9 项专项测试、82 项全工作区测试及全部质量门禁 | 未修改开发计划；未批准任何阶段 Gate |
 | `P3-01` | `DONE` | 2026-07-25 | 2026-07-25 | `156adcc66c8b1cead0f2619d9d92e203759986ab` | `ironpilot-portfolio-v1`、受管数量卖出边界、余额差异阻止新开仓、Fill/ManagedLot 原子幂等与对账审计；10 项专项测试、92 项全工作区测试及全部质量门禁 | 未修改开发计划；未批准任何阶段 Gate |
-| `P3-02` | `DONE` | 2026-07-25 | 2026-07-25 | `be3bb43855d3b92398c965203cade3e199e08c6b` | `ironpilot-risk-rules-v1`、六种封闭裁决、只降不升授权、Portfolio/活动计划 fail-closed、确定性决策 hash；10 项专项测试、102 项全工作区测试及全部质量门禁 | 未实现 P3-09 物化算法、TradePlan/Execution 或持久化编排；未修改开发计划或批准 Gate |
-| `P3-09` | `READY` | — | — | — | — | `P1-02`,`P2-03`,`P3-01` 已完成 |
+| `P3-02` | `DONE` | 2026-07-25 | 2026-07-25 | `be3bb43855d3b92398c965203cade3e199e08c6b` | v2 `ironpilot-risk-rules-v1` 历史实现与原验收证据 | v3 遗留，不得进入活动链；由 P3-12 安全退役，历史证据保留 |
+| `P3-09` | `CANCELLED` | — | — | — | DEVELOPMENT_PLAN v3.0.0；ADR-0006 | 未开始实现；Materializer 与 AI 主导交易权限冲突 |
+| `P3-12` | `READY` | — | — | — | — | v3 活动链的下一项 Task |
 | `P3-03` | `PLANNED` | — | — | — | — | — |
 | `P3-04` | `PLANNED` | — | — | — | — | — |
+| `P3-13` | `PLANNED` | — | — | — | — | — |
 | `P3-05` | `PLANNED` | — | — | — | — | — |
 | `P3-10A` | `PLANNED` | — | — | — | — | — |
 | `P3-06` | `PLANNED` | — | — | — | — | — |
@@ -100,6 +103,13 @@ None.
 - Commit：`98f87db43c9d8c23d563ce8df43d521ea434c924`。
 - 证据：`docs/adr/0005-bounded-ai-strategy-authority.md`；ADR 相对链接检查；P0-03 语义断言；`git diff --check`；`docs/DEVELOPMENT_PLAN.md` 零差异。
 - 已知限制：本 Task 只完成文档与术语治理，不包含业务实现，不批准任何阶段 Gate，也不引入新闻能力。
+
+### P0-04 — DEVELOPMENT_PLAN v3 AI 主导架构修订
+
+- 结果：依据用户明确确认，将权威主链修订为完整 Market/Account Context → DeepSeek `AITradingPlan v3` → 只接受或拒绝的 Execution Validation/User Authorization → 忠实 TradePlan/Execution；取消活动链中的 Strategy Space 白名单、确定性 Materializer 和后置策略型 Risk Engine；AI 直接决定精确 entry、quantity、stop、take-profit 和正常持仓管理。
+- Commit：`93ba9018a50bb49a215eca07e387552d51791a86`。
+- 证据：DEVELOPMENT_PLAN 版本提升至 3.0.0；新增 ADR-0006 并 supersede ADR-0005；同步 ADR-0002/0003/0004、`CONTEXT.md` 和 v2 历史文档标记；35 个 Task 定义、32 个活动图节点、全部直接依赖逐项一致；`AITradingPlan v3` JSON 可解析；Task 引用、ADR 相对链接、遗留 P3-02/P3-09 隔离和 `git diff --check` 通过。
+- 已知限制：本 Task 只完成计划、ADR、词汇和历史边界修订，没有删除 v2 代码或数据库结构，也没有实现 `AITradingPlan v3`；P3-12 负责后续安全迁移；未批准任何阶段 Gate。
 
 ### P1-01 — Rust 工程骨架与质量门禁
 
@@ -171,16 +181,16 @@ None.
 - 证据：10 项 P3-01 专项测试覆盖 Instrument Rules 资产绑定、买卖 Fill 合同、受管/可用数量卖出上限、未知资产与短缺分类、任意余额差异阻止新开仓、规范快照 hash、重复/非法资产 fail-closed、买卖 Fill 持久化幂等、幂等键内容冲突、超量卖出事务回滚及对账/审计原子幂等；全工作区 92 项测试通过，1 项既有 Bybit 线上 WSS 只读测试保持显式忽略；`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo build --workspace --all-targets --locked`、`cargo metadata --locked --no-deps`、cargo-deny advisories/bans/licenses/sources、Gitleaks 8.30.1 Git 历史与源码工作树扫描全部通过；`docs/DEVELOPMENT_PLAN.md` 零差异。
 - 已知限制：本 Task 接受上游提供的交易所余额事实但不调用私有 API；不创建订单、不模拟成交、不计算手续费、不裁决 Risk，也不实现 TradePlan 生命周期或任何阶段 Gate 批准。
 
-### P3-02 — 确定性 Risk Engine
+### P3-02 — v2 确定性 Risk Engine（历史）
 
 - 结果：实现 `ironpilot-risk-rules-v1` 纯领域合同；Risk 输入必须绑定本地已验证的 `strategy-space-v1-vs` Intent、原始 decision/snapshot/instrument/action、物化算法版本与不可变 hash。裁决结果封闭为 `APPROVE`、`ADJUST_DOWN`、`REJECT`、`REDUCE_ONLY`、`HALT_SYMBOL`、`HALT_SYSTEM`；只有批准或向下调整能产生私有构造的 `RiskAuthorization`，并保留原策略身份且数量永不增加。Portfolio 差异、活动 TradePlan 上限、系统/标的降权及硬上限破坏均 fail closed；决策 hash 绑定全部裁决输入、上下文、结果和原因。
 - Commit：`be3bb43855d3b92398c965203cade3e199e08c6b`。
 - 证据：10 项 P3-02 专项测试覆盖合法追溯、只降不升、零额度、Portfolio 差异、活动计划上限与硬上限破坏、系统/标的降权、非 `strategy-space-v1-vs`/非 `OPEN_LONG` 输入拒绝、六种结果封闭、确定性 hash 及授权数量属性测试；全工作区 102 项测试通过，1 项既有 Bybit 线上 WSS 只读测试保持显式忽略；`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo test --workspace --all-targets --locked`、`cargo build --workspace --all-targets --locked`、`cargo metadata --locked --no-deps`、cargo-deny 0.19.4 advisories/bans/licenses/sources、Gitleaks 8.30.1 Git 历史与本次源码工作树扫描、`git diff --check` 全部通过；`docs/DEVELOPMENT_PLAN.md` 零差异。
-- 已知限制：本 Task 只冻结并实现 `P3-VS` 前 `OPEN_LONG` 物化候选的纯领域风险裁决与授权边界；P3-09 负责真实确定性物化算法，后续 TradePlan/Application Task 负责 risk decision 持久化、audit-before-action 和 Execution 输入编排。本 Task 不构造订单、不产生外部副作用，也不批准任何阶段 Gate。
+- 已知限制：本段结果与证据属于 v2 历史。DEVELOPMENT_PLAN v3.0.0 和 ADR-0006 已禁止该 Risk Engine 进入活动链；P3-12 负责安全退役其代码/Schema 并保留历史审计。本 Task 不批准任何阶段 Gate。
 
 ## Next Action
 
-Execute P3-09 next.
+Execute P3-12 next.
 
 以上内容是依据 `docs/DEVELOPMENT_PLAN.md` 静态依赖生成的进度建议，不改变任何 Task 依赖。
 
