@@ -11,9 +11,10 @@ mod runtime;
 pub use config::{
     CONFIG_SCHEMA_VERSION_V1, ConfigValidationError, DeploymentEnvironment, EnvironmentFingerprint,
     ExecutionMode, LlmLimits, MARKET_FEATURES_VERSION_V1, MarketLimits, PermissionConfig,
-    QueueLimits, RISK_RULES_VERSION_V1, RuntimeConfig, RuntimeLimits, StartupIdentity,
-    StorageLimits, ValidatedRuntimeConfig, VersionConfig,
+    QueueLimits, RuntimeConfig, RuntimeLimits, StartupIdentity, StorageLimits,
+    ValidatedRuntimeConfig, VersionConfig,
 };
+pub use ironpilot_domain::RISK_RULES_VERSION_V1;
 pub use persistence::{
     AuditEntry, OutboxMessage, PersistedSystemState, SystemStateChange, UnixMillis,
     ValidationError as PersistenceValidationError,

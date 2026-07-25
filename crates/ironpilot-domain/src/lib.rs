@@ -11,6 +11,7 @@ mod market;
 mod market_features;
 mod portfolio;
 mod replay;
+mod risk;
 mod state;
 mod strategy;
 
@@ -48,6 +49,11 @@ pub use replay::{
     MARKET_REPLAY_REPORT_VERSION_V1, MARKET_REPLAY_SCHEMA_VERSION_V1, REPLAY_DETERMINISTIC_SEED_V1,
     ReplayClock, ReplayDataset, ReplayEligibilityOutcome, ReplayError, ReplayHash,
     ReplayInstrumentData, ReplayManifest, ReplayRecord, ReplayReport, ReplayRunner,
+};
+pub use risk::{
+    MAX_ACTIVE_TRADE_PLANS, MAX_MATERIALIZATION_VERSION_LENGTH, MaterializationHash,
+    MaterializedRiskInput, RISK_RULES_VERSION_V1, RiskAuthorization, RiskContext, RiskDecision,
+    RiskDecisionHash, RiskEngine, RiskInputError, RiskOutcome, RiskReason, SymbolRiskState,
 };
 pub use state::{InvalidTransition, OrderState, SystemState, TradePlanState};
 pub use strategy::{

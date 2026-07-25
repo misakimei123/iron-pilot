@@ -2,13 +2,15 @@ use core::fmt;
 use core::str::FromStr;
 use std::collections::BTreeSet;
 
-use ironpilot_domain::{DomainDecimal, InstrumentId, InstrumentType, STRATEGY_SPACE_VERSION_V1_VS};
+use ironpilot_domain::{
+    DomainDecimal, InstrumentId, InstrumentType, RISK_RULES_VERSION_V1,
+    STRATEGY_SPACE_VERSION_V1_VS,
+};
 use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 pub const CONFIG_SCHEMA_VERSION_V1: &str = "ironpilot-config-v1";
 pub const MARKET_FEATURES_VERSION_V1: &str = "ironpilot-market-features-v1";
-pub const RISK_RULES_VERSION_V1: &str = "ironpilot-risk-rules-v1";
 
 const MAX_TARGET_CPU_CORES: u16 = 2;
 const MAX_TARGET_MEMORY_MB: u32 = 2_048;

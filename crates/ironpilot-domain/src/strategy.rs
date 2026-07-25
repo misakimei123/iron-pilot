@@ -354,6 +354,16 @@ impl StrategyIntent {
     }
 
     #[must_use]
+    pub const fn decision_id(&self) -> DecisionId {
+        self.decision_id
+    }
+
+    #[must_use]
+    pub const fn snapshot_id(&self) -> SnapshotId {
+        self.snapshot_id
+    }
+
+    #[must_use]
     pub fn instrument_id(&self) -> &InstrumentId {
         &self.instrument_id
     }
