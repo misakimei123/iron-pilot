@@ -4,9 +4,9 @@
 >
 > This file is the single source of truth for current implementation progress.
 >
-> Plan baseline: DEVELOPMENT_PLAN v3.0.0
+> Plan baseline: DEVELOPMENT_PLAN v3.1.0
 >
-> Plan commit: `93ba9018a50bb49a215eca07e387552d51791a86`
+> Plan commit: `d39229b4f734d77c280bb3a8e614b5f9df8ff358`
 >
 > Last updated: 2026-07-25
 
@@ -49,7 +49,7 @@
 | `P3-09` | `CANCELLED` | — | — | — | DEVELOPMENT_PLAN v3.0.0；ADR-0006 | 未开始实现；Materializer 与 AI 主导交易权限冲突 |
 | `P3-12` | `DONE` | 2026-07-25 | 2026-07-25 | `117dad5dede912b3850b93ff8bf47404bde32a84` | `AITradingPlan v3` 合同；v2 源码/API/状态/配置隔离；Replay v2 版本证据；遗留 SQLite 表只读封存；8 项专项测试与全量门禁 | 未修改开发计划；未批准任何阶段 Gate |
 | `P3-03` | `DONE` | 2026-07-25 | 2026-07-25 | `e093bc8c11d7a9927450b6be652eb26eab4c2dd8` | 完整事实 Context/稳定 hash；原始响应与 AI Plan provenance；原子 TradePlan Ledger；8 项专项测试与全量门禁 | 未修改开发计划；未批准任何阶段 Gate |
-| `P3-04` | `DONE` | 2026-07-25 | 2026-07-25 | `98f30dddf68ab8fc88c522d9a24e1c2c123da3c7` | Prompt v1；DeepSeek JSON client；strict parse；usage/cost/latency；预算；一次 replan；持久化证据；11 项专项测试与全量门禁 | 未修改开发计划；未批准任何阶段 Gate；确定性门禁不调用线上 DeepSeek |
+| `P3-04` | `DONE` | 2026-07-25 | 2026-07-25 | `98f30dddf68ab8fc88c522d9a24e1c2c123da3c7`；`7928509ddad5ff65e8ab4e8540db86b0d6cc00c6` | Prompt v1；`async-openai` DeepSeek client；strict parse；usage/cost/latency；预算；一次 replan；原始证据；13 项专项测试与全量门禁 | v3.1.0 开源优先重构；未批准任何阶段 Gate；确定性门禁不调用线上 DeepSeek |
 | `P3-13` | `READY` | — | — | — | — | P3-12 完成后依赖已满足 |
 | `P3-05` | `PLANNED` | — | — | — | — | — |
 | `P3-10A` | `PLANNED` | — | — | — | — | — |
@@ -207,11 +207,11 @@ None.
 
 ### P3-04 — DeepSeek AI Trading Plan Provider
 
-- 结果：实现版本化 `ironpilot-deepseek-trading-prompt-v1`，把 Context 中完整 120 根 15m/1h 原始 K 线、派生指标/形态、一级盘口、instrument rules、账户/余额/受管持仓/活动订单和用户最大亏损授权同时交给 DeepSeek；Prompt 冻结七类 `AITradingPlan v3` 动作及精确 Decimal 输出要求，不注入 Strategy Space、Materializer、anchor、risk tier 或本地交易推荐。实现 DeepSeek V4 Flash/Pro `/chat/completions` JSON Output client、thinking mode、HTTPS/无重定向/敏感 Authorization header、响应体/输出 Token/超时/并发硬上限和严格模型/choice/finish reason/usage/provenance/TTL 校验；API key 仅从 `IRONPILOT_DEEPSEEK_API_KEY` 或显式构造参数进入敏感 header，不进入 YAML、Prompt 或证据。
-- 失败与预算：空输出、截断、未知字段、浮点/非法方案、provider refusal、HTTP/传输/超时、超大响应、future/expired Context、模型或 usage 不一致全部 fail closed，不生成本地替代方案；Provider 不依赖任何 Execution/OrderIntent Adapter。调用前按 Prompt 字节上界和最大输出预留 Token/最坏费用，call/token/cost 任一预算耗尽均在 HTTP 前拒绝；按 cache hit/cache miss/output 官方价格快照精确核算实际费用并记录 latency。拒绝反馈只能把同一 Context、被拒原始 AI Plan 和有界原因交回 DeepSeek，所有 clone 共享每 Context 一次 replan 上限，第二次在 HTTP 前拒绝。
-- 证据：新增 `ai_provider_attempts` migration，记录 prompt version/hash、完整 request/response、model/vendor ID、finish reason、usage、精确费用、延迟、outcome 和 replan 标记；租约保护下与不可变 Context、审计原子持久化，相同 attempt 重复效果为 0，冲突或审计失败完整回滚，SQLite 唯一索引强制每 Context 最多一次 replan。11 项专项测试覆盖 Prompt 完整事实与无本地策略、精确 OPEN_LONG 入场/数量/止损/多止盈、多管理动作、空/截断/未知字段、超时、call/token/cost 预算、拒绝反馈重规划、原始 usage/cost/latency 及持久化原子性。
-- Commit：`98f30dddf68ab8fc88c522d9a24e1c2c123da3c7`。
-- 门禁：全工作区 111 项测试通过、0 失败，1 项既有 Bybit 线上 WSS 只读测试保持显式忽略；`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo test --workspace --all-targets --locked`、`cargo build --workspace --all-targets --locked`、`cargo metadata --locked --no-deps`、cargo-deny advisories/bans/licenses/sources、Gitleaks 8.30.1 Git 历史与源码工作树扫描、Prompt AI 权限/Provider 执行隔离/证据 Schema 静态断言和 `git diff --check` 全部通过；`docs/DEVELOPMENT_PLAN.md` 零差异。
+- 结果：实现版本化 `ironpilot-deepseek-trading-prompt-v1`，把 Context 中完整 120 根 15m/1h 原始 K 线、派生指标/形态、一级盘口、instrument rules、账户/余额/受管持仓/活动订单和用户最大亏损授权同时交给 DeepSeek；Prompt 冻结七类 `AITradingPlan v3` 动作及精确 Decimal 输出要求，不注入 Strategy Space、Materializer、anchor、risk tier 或本地交易推荐。DeepSeek V4 Flash/Pro `/chat/completions` 已重构到 `async-openai 0.41.1`：SDK 负责 OpenAI-compatible base URL、认证、chat path、标准请求序列化、HTTP 执行合同和响应解码；BYOT 承载 DeepSeek `thinking` 与 cache usage 扩展；API key 仅从 `IRONPILOT_DEEPSEEK_API_KEY` 或显式构造参数进入 SDK secret config，不进入 YAML、Prompt 或证据。
+- 边界与预算：IronPilot 自有代码只保留 Prompt、严格领域解析、usage/cost/latency、预算、一次 replan 和项目必须的 bounded evidence service。该 service 在 SDK 反序列化前流式限制 128 KiB、捕获精确原始响应并重建同一 bounded response；安装自有 service 会替换 SDK 默认 retry executor，确保一次预算 attempt 最多一次 HTTP 请求。空输出、截断、未知字段、浮点/非法方案、provider refusal、HTTP/传输/超时、超大响应、future/expired Context、模型或 usage 不一致全部 fail closed，不生成本地替代方案；call/token/cost 任一预算耗尽均在 HTTP 前拒绝；拒绝反馈仍限定同一 Context 最多一次显式 replan。
+- 证据：`ai_provider_attempts` 继续记录 prompt version/hash、完整 request/response、model/vendor ID、finish reason、usage、精确费用、延迟、outcome 和 replan 标记；租约保护、原子持久化、幂等和每 Context 一次 replan 数据库约束不变。13 项专项测试除原有 Prompt/动作/strict parse/预算/持久化覆盖外，新增验证 SDK 429 隐藏重试为 0、单 attempt 仅一个 HTTP request、HTTP 错误原始响应逐字保留、128 KiB 上限在 SDK 解码前拒绝及成功响应精确证据。
+- Commit：原始实现 `98f30dddf68ab8fc88c522d9a24e1c2c123da3c7`；开源库重构 `7928509ddad5ff65e8ab4e8540db86b0d6cc00c6`；独立计划修订 `d39229b4f734d77c280bb3a8e614b5f9df8ff358`。
+- 门禁：全工作区 113 项测试通过、0 失败，1 项既有 Bybit 线上 WSS 只读测试保持显式忽略；`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo test --workspace --all-targets --locked`、`cargo build --workspace --all-targets --locked`、`cargo metadata --locked --no-deps`、cargo-deny 0.19.4 advisories/bans/licenses/sources、Gitleaks 8.30.1 Git 历史与工作树扫描、SDK 单请求/原始证据/响应上限断言和 `git diff --check` 全部通过；开发计划 v3.1.0 已在独立提交升版，重构提交本身未修改计划。
 - 已知限制：本 Task 不执行 P3-13 的 `ACCEPT/REJECT`，不生成 P3-05 的 OrderIntent/Paper 订单，也不实现 P3-06 的业务主循环；确定性仓库门禁使用本地 HTTP 协议服务，不消耗真实 DeepSeek API。Task 验收不批准任何阶段 Gate。
 
 ## Next Action
