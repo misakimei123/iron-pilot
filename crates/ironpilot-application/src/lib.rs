@@ -4,10 +4,16 @@
 
 #![forbid(unsafe_code)]
 
+mod ai;
 mod config;
 mod persistence;
 mod runtime;
 
+pub use ai::{
+    AI_TRADING_PROMPT_VERSION_V1, AiPlanRejectionFeedback, AiPromptError, AiTradingPrompt,
+    AiTradingPromptHash, MAX_REPLAN_REASON_LENGTH, MAX_REPLAN_REASONS,
+    PROMPT_CANDLES_PER_TIMEFRAME,
+};
 pub use config::{
     CONFIG_SCHEMA_VERSION_V2, ConfigValidationError, DeploymentEnvironment, EnvironmentFingerprint,
     ExecutionMode, LlmLimits, MarketLimits, PermissionConfig, QueueLimits, RuntimeConfig,

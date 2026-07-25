@@ -11,6 +11,8 @@ use ironpilot_application::{
     StartupIdentity, ValidatedRuntimeConfig,
 };
 
+use crate::deepseek::DEEPSEEK_API_KEY_ENV;
+
 pub const CONFIG_PATH_ENV: &str = "IRONPILOT_CONFIG_PATH";
 pub const ENVIRONMENT_NAME_ENV: &str = "IRONPILOT_ENVIRONMENT";
 pub const ENVIRONMENT_FINGERPRINT_ENV: &str = "IRONPILOT_ENVIRONMENT_FINGERPRINT";
@@ -139,7 +141,10 @@ where
         }
         if !matches!(
             key_text,
-            CONFIG_PATH_ENV | ENVIRONMENT_NAME_ENV | ENVIRONMENT_FINGERPRINT_ENV
+            CONFIG_PATH_ENV
+                | ENVIRONMENT_NAME_ENV
+                | ENVIRONMENT_FINGERPRINT_ENV
+                | DEEPSEEK_API_KEY_ENV
         ) {
             return Err(LoadConfigError::UnknownEnvironmentVariable {
                 name: key_text.into(),

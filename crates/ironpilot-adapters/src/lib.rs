@@ -8,6 +8,7 @@
 mod bybit_public;
 mod bybit_public_websocket;
 mod config;
+mod deepseek;
 mod persistence;
 mod resources;
 
@@ -25,6 +26,14 @@ pub use bybit_public_websocket::{
 pub use config::{
     CONFIG_PATH_ENV, ENVIRONMENT_FINGERPRINT_ENV, ENVIRONMENT_NAME_ENV, LoadConfigError,
     load_startup_config, load_startup_config_from_vars, parse_and_validate_yaml, parse_yaml_config,
+};
+pub use deepseek::{
+    DEEPSEEK_API_BASE_URL, DEEPSEEK_API_KEY_ENV, DEEPSEEK_PROVIDER_NAME,
+    DeepSeekAiTradingPlanProvider, DeepSeekAttemptEvidence, DeepSeekAttemptOutcome,
+    DeepSeekBudgetLimits, DeepSeekBudgetSnapshot, DeepSeekModel, DeepSeekPlanGeneration,
+    DeepSeekPricing, DeepSeekProviderConfig, DeepSeekProviderError, DeepSeekProviderErrorKind,
+    DeepSeekUsage, MAX_DEEPSEEK_OUTPUT_TOKENS, MAX_DEEPSEEK_REQUEST_TIMEOUT,
+    MAX_DEEPSEEK_RESPONSE_BYTES,
 };
 pub use persistence::{
     AiTradePlanTraceRow, AuditRow, InstanceLease, LeaseAcquireError, PendingOutboxRow,

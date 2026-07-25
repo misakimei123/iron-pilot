@@ -18,6 +18,10 @@ use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, S
 use sqlx::{Row, SqlitePool};
 use tokio::sync::Mutex;
 
+use crate::deepseek::{
+    DEEPSEEK_PROVIDER_NAME, DeepSeekAttemptEvidence, DeepSeekAttemptOutcome, DeepSeekUsage,
+};
+
 static MIGRATOR: Migrator = sqlx::migrate!("./migrations");
 const TRADING_RUNTIME_LOCK: &str = "trading-runtime";
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -635,6 +639,217 @@ impl SqliteRepository {
         Ok(PersistenceEffect::Applied)
     }
 
+    pub async fn persist_ai_provider_attempt(
+        &self,
+        owner_id: RuntimeInstanceId,
+        context: &AiDecisionContext,
+        evidence: &DeepSeekAttemptEvidence,
+        audit: &AuditEntry,
+    ) -> Result<PersistenceEffect, StorageError> {
+        if evidence.context_id() != context.context_id()
+            || evidence.prompt_version() != ironpilot_application::AI_TRADING_PROMPT_VERSION_V1
+            || evidence.requested_at_unix_millis() < context.as_of_unix_millis()
+            || context.is_expired_at(evidence.requested_at_unix_millis())
+        {
+            return Err(StorageError::InvalidAiProviderEvidence);
+        }
+        let occurred_at = evidence
+            .received_at_unix_millis()
+            .unwrap_or(evidence.requested_at_unix_millis());
+        if audit.occurred_at().get() != domain_timestamp(occurred_at)? {
+            return Err(StorageError::AtomicTimestampMismatch);
+        }
+        if evidence
+            .received_at_unix_millis()
+            .is_some_and(|received_at| {
+                received_at < evidence.requested_at_unix_millis()
+                    || context.is_expired_at(received_at)
+            })
+        {
+            return Err(StorageError::InvalidAiProviderEvidence);
+        }
+        if evidence.outcome() == DeepSeekAttemptOutcome::Plan
+            && (evidence.raw_response().is_none()
+                || evidence.usage().is_none()
+                || evidence.cost_usd().is_none()
+                || evidence.received_at_unix_millis().is_none())
+        {
+            return Err(StorageError::InvalidAiProviderEvidence);
+        }
+        serde_json::from_str::<Value>(evidence.raw_request())
+            .map_err(|_| StorageError::InvalidAiProviderEvidence)?;
+
+        let _write_guard = self.write_gate.lock().await;
+        let mut transaction = self.pool.begin().await?;
+        ensure_instance_lease(&mut transaction, owner_id, domain_timestamp(occurred_at)?).await?;
+        ensure_ai_context(&mut transaction, context).await?;
+        let usage = evidence.usage();
+        let insert = sqlx::query(
+            "
+            INSERT INTO ai_provider_attempts(
+                attempt_id, context_id, provider, model, prompt_version, prompt_hash,
+                is_replan, requested_at, received_at, latency_millis, raw_request,
+                raw_response, vendor_response_id, finish_reason, prompt_tokens,
+                completion_tokens, cache_hit_tokens, cache_miss_tokens, total_tokens,
+                cost_usd, outcome
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(attempt_id) DO NOTHING
+            ",
+        )
+        .bind(evidence.attempt_id().to_string())
+        .bind(evidence.context_id().to_string())
+        .bind(DEEPSEEK_PROVIDER_NAME)
+        .bind(evidence.model())
+        .bind(evidence.prompt_version())
+        .bind(evidence.prompt_hash())
+        .bind(i64::from(evidence.is_replan()))
+        .bind(domain_timestamp(evidence.requested_at_unix_millis())?)
+        .bind(
+            evidence
+                .received_at_unix_millis()
+                .map(domain_timestamp)
+                .transpose()?,
+        )
+        .bind(
+            i64::try_from(evidence.latency_millis())
+                .map_err(|_| StorageError::InvalidStoredTimestamp)?,
+        )
+        .bind(evidence.raw_request())
+        .bind(evidence.raw_response())
+        .bind(evidence.vendor_response_id())
+        .bind(evidence.finish_reason())
+        .bind(
+            usage
+                .map(DeepSeekUsage::prompt_tokens)
+                .map(token_count)
+                .transpose()?,
+        )
+        .bind(
+            usage
+                .map(DeepSeekUsage::completion_tokens)
+                .map(token_count)
+                .transpose()?,
+        )
+        .bind(
+            usage
+                .map(DeepSeekUsage::prompt_cache_hit_tokens)
+                .map(token_count)
+                .transpose()?,
+        )
+        .bind(
+            usage
+                .map(DeepSeekUsage::prompt_cache_miss_tokens)
+                .map(token_count)
+                .transpose()?,
+        )
+        .bind(
+            usage
+                .map(DeepSeekUsage::total_tokens)
+                .map(token_count)
+                .transpose()?,
+        )
+        .bind(evidence.cost_usd().map(|cost| cost.to_string()))
+        .bind(evidence.outcome().as_str())
+        .execute(&mut *transaction)
+        .await?;
+        if insert.rows_affected() == 0 {
+            let matches: i64 = sqlx::query_scalar(
+                "
+                SELECT EXISTS(
+                    SELECT 1
+                    FROM ai_provider_attempts
+                    WHERE attempt_id = ?
+                      AND context_id = ?
+                      AND provider = ?
+                      AND model = ?
+                      AND prompt_version = ?
+                      AND prompt_hash = ?
+                      AND is_replan = ?
+                      AND requested_at = ?
+                      AND received_at IS ?
+                      AND latency_millis = ?
+                      AND raw_request = ?
+                      AND raw_response IS ?
+                      AND vendor_response_id IS ?
+                      AND finish_reason IS ?
+                      AND prompt_tokens IS ?
+                      AND completion_tokens IS ?
+                      AND cache_hit_tokens IS ?
+                      AND cache_miss_tokens IS ?
+                      AND total_tokens IS ?
+                      AND cost_usd IS ?
+                      AND outcome = ?
+                )
+                ",
+            )
+            .bind(evidence.attempt_id().to_string())
+            .bind(evidence.context_id().to_string())
+            .bind(DEEPSEEK_PROVIDER_NAME)
+            .bind(evidence.model())
+            .bind(evidence.prompt_version())
+            .bind(evidence.prompt_hash())
+            .bind(i64::from(evidence.is_replan()))
+            .bind(domain_timestamp(evidence.requested_at_unix_millis())?)
+            .bind(
+                evidence
+                    .received_at_unix_millis()
+                    .map(domain_timestamp)
+                    .transpose()?,
+            )
+            .bind(
+                i64::try_from(evidence.latency_millis())
+                    .map_err(|_| StorageError::InvalidStoredTimestamp)?,
+            )
+            .bind(evidence.raw_request())
+            .bind(evidence.raw_response())
+            .bind(evidence.vendor_response_id())
+            .bind(evidence.finish_reason())
+            .bind(
+                usage
+                    .map(DeepSeekUsage::prompt_tokens)
+                    .map(token_count)
+                    .transpose()?,
+            )
+            .bind(
+                usage
+                    .map(DeepSeekUsage::completion_tokens)
+                    .map(token_count)
+                    .transpose()?,
+            )
+            .bind(
+                usage
+                    .map(DeepSeekUsage::prompt_cache_hit_tokens)
+                    .map(token_count)
+                    .transpose()?,
+            )
+            .bind(
+                usage
+                    .map(DeepSeekUsage::prompt_cache_miss_tokens)
+                    .map(token_count)
+                    .transpose()?,
+            )
+            .bind(
+                usage
+                    .map(DeepSeekUsage::total_tokens)
+                    .map(token_count)
+                    .transpose()?,
+            )
+            .bind(evidence.cost_usd().map(|cost| cost.to_string()))
+            .bind(evidence.outcome().as_str())
+            .fetch_one(&mut *transaction)
+            .await?;
+            if matches != 1 {
+                return Err(StorageError::IdempotencyConflict);
+            }
+            transaction.commit().await?;
+            return Ok(PersistenceEffect::DuplicateNoEffect);
+        }
+        insert_audit(&mut transaction, audit).await?;
+        transaction.commit().await?;
+        Ok(PersistenceEffect::Applied)
+    }
+
     pub async fn ai_trade_plan_trace(
         &self,
         action_id: TradePlanActionId,
@@ -924,6 +1139,10 @@ async fn ensure_existing_ai_ledger_matches(
 
 fn domain_timestamp(value: u64) -> Result<i64, StorageError> {
     i64::try_from(value).map_err(|_| StorageError::InvalidStoredTimestamp)
+}
+
+fn token_count(value: u64) -> Result<i64, StorageError> {
+    i64::try_from(value).map_err(|_| StorageError::InvalidAiProviderEvidence)
 }
 
 async fn insert_managed_lot(
@@ -1373,6 +1592,7 @@ pub enum StorageError {
     },
     InvalidDatabasePath,
     InvalidStoredTimestamp,
+    InvalidAiProviderEvidence,
     InvalidStoredSystemState {
         value: Box<str>,
     },
@@ -1426,6 +1646,9 @@ impl fmt::Display for StorageError {
             Self::InvalidDatabasePath => formatter.write_str("SQLite database path is invalid"),
             Self::InvalidStoredTimestamp => {
                 formatter.write_str("SQLite contains an invalid timestamp")
+            }
+            Self::InvalidAiProviderEvidence => {
+                formatter.write_str("AI provider attempt evidence is invalid")
             }
             Self::InvalidStoredSystemState { value } => {
                 write!(formatter, "SQLite contains unknown system state {value}")
@@ -1578,6 +1801,7 @@ mod tests {
             table_names,
             vec![
                 "ai_decision_contexts",
+                "ai_provider_attempts",
                 "ai_provider_responses",
                 "ai_trade_plan_ledger",
                 "ai_trading_plans",

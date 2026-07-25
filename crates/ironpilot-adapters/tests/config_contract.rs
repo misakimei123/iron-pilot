@@ -2,8 +2,8 @@ use core::str::FromStr;
 use std::path::PathBuf;
 
 use ironpilot_adapters::{
-    CONFIG_PATH_ENV, ENVIRONMENT_FINGERPRINT_ENV, ENVIRONMENT_NAME_ENV, LoadConfigError,
-    load_startup_config_from_vars, parse_and_validate_yaml, parse_yaml_config,
+    CONFIG_PATH_ENV, DEEPSEEK_API_KEY_ENV, ENVIRONMENT_FINGERPRINT_ENV, ENVIRONMENT_NAME_ENV,
+    LoadConfigError, load_startup_config_from_vars, parse_and_validate_yaml, parse_yaml_config,
 };
 use ironpilot_application::{
     ConfigValidationError, DeploymentEnvironment, EnvironmentFingerprint, ExecutionMode,
@@ -466,6 +466,13 @@ fn environment_loader_is_strict_and_reads_the_yaml_path() {
         Err(LoadConfigError::UnknownEnvironmentVariable {
             name: "IRONPILOT_ENABLE_LIVE".into()
         })
+    );
+
+    let mut with_secret = valid_environment_variables();
+    with_secret.push((DEEPSEEK_API_KEY_ENV, "secret-is-not-config".to_owned()));
+    assert!(
+        load_startup_config_from_vars(with_secret).is_ok(),
+        "recognized provider secret must not be parsed into YAML configuration"
     );
 }
 
