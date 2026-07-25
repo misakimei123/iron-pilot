@@ -22,10 +22,10 @@
 - Current phase: Phase B — Market to AI
 - In progress: None
 - Ready:
-  - P2-02
+  - P2-03
   - P3-01
 - Blocked: None
-- Next recommended task: P2-02
+- Next recommended task: P2-03
 
 ## Task Status
 
@@ -40,8 +40,8 @@
 | `P1-04` | `DONE` | 2026-07-25 | 2026-07-25 | `05dba297c7120d6e9e7fd01b06d3b3ad25c67413` | SQLx migration/WAL；关键状态、审计与 outbox 原子写；append-only 触发器；租约隔离与过期接管；备份完整性和恢复；6 项专项测试、39 项全工作区测试及全部质量门禁 | 未修改开发计划；未批准任何阶段 Gate |
 | `P1-05` | `DONE` | 2026-07-25 | 2026-07-25 | `24e7e87ea698e749c1ffad423136e36655ce3f31` | Tokio 有界任务监督与 watch 取消；1024/256 有界队列和 correlation ID；饱和/关闭不静默丢失；可信健康快照；RSS/CPU 采样；1400 MiB 软门槛降级；协作/强制 shutdown；5 项专项测试、44 项全工作区测试及全部质量门禁 | 未修改开发计划；未批准任何阶段 Gate |
 | `P2-01` | `DONE` | 2026-07-25 | 2026-07-25 | `ffab892dad1318633f6665dcbb39b14900fca10c` | Bybit fixtures、TTL/hash、错误分类、在线只读 smoke、52 项全工作区测试及全部质量门禁 | 未修改开发计划；未批准任何阶段 Gate |
-| `P2-02` | `READY` | — | — | — | — | `P2-01`,`P1-05` 已完成 |
-| `P2-03` | `PLANNED` | — | — | — | — | — |
+| `P2-02` | `DONE` | 2026-07-25 | 2026-07-25 | `8bc805aed916df1a56ef4472484ad3bfc5ed1702` | 1–3 标的确定性订阅与重订阅；heartbeat、去重、乱序、重连、freshness 和显式 backpressure；8 项专项测试、60 项全工作区测试及全部质量门禁 | 未修改开发计划；未批准任何阶段 Gate |
+| `P2-03` | `READY` | — | — | — | — | `P2-02` 已完成 |
 | `P2-04` | `PLANNED` | — | — | — | — | — |
 | `P3-01` | `READY` | — | — | — | — | `P1-04`,`P2-01` 已完成 |
 | `P3-02` | `PLANNED` | — | — | — | — | — |
@@ -144,9 +144,16 @@ None.
 - 证据：8 项 P2-01 fixture/合同测试覆盖服务器时间整数精度、精确十进制、Spot 无分页 cursor、规则 hash 顺序/表示规范化、TTL 过期边界、限流分类、请求上限和 HTTPS origin；全工作区 52 项测试通过；Bybit 主网公共只读 `server time` 与 `BTCUSDT` instruments smoke 返回 `retCode=0`、`Trading` 和预期精度字段；`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo build --workspace --all-targets --locked`、`cargo metadata --locked --no-deps`、cargo-deny 0.19.4 advisories/bans/licenses/sources、Gitleaks 8.30.1 历史与源码工作树扫描全部通过；`docs/DEVELOPMENT_PLAN.md` 零差异。
 - 已知限制：本 Task 只实现公共 REST 元数据，不包含 WebSocket、私有接口、自动重试、持久化缓存、交易逻辑或执行权限；调用方必须在 TTL 到期前刷新或按过期规则 fail closed；不批准任何阶段 Gate。
 
+### P2-02 — 多标的公共 WebSocket
+
+- 结果：实现 Bybit Spot 公共 WebSocket adapter；为 1–3 个标的生成确定性的 15 分钟 K 线、60 分钟 K 线和一级 orderbook 订阅集合；支持应用 heartbeat、指数退避重连、原集合重订阅、K 线与 orderbook 去重/乱序防护、服务重启快照处理、每标的/主题 freshness，以及接入现有 1024 容量行情队列的显式 backpressure；消息、帧和写缓冲均设置硬上限。
+- Commit：`8bc805aed916df1a56ef4472484ad3bfc5ed1702`。
+- 证据：8 项 P2-02 专项测试覆盖确定性订阅集合、精确 Decimal 映射、K 线与 orderbook 去重/乱序、每主题 freshness、订阅确认/拒绝、队列饱和、Spot-only 配置与退避上限，以及本地真实 WebSocket 断线重连、原集合重订阅和恢复后交付；全工作区 60 项测试通过，1 项依赖 Bybit 线上 WSS 的只读测试保持显式忽略；`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo build --workspace --all-targets --locked`、`cargo metadata --locked --no-deps`、cargo-deny advisories/bans/licenses/sources、Gitleaks 8.30.1 Git 历史与源码工作树扫描全部通过；`docs/DEVELOPMENT_PLAN.md` 零差异。
+- 已知限制：当前执行环境无法完成 Bybit 主网 WSS 握手，因此未把线上只读 smoke 计为通过；协议恢复和有界性验收由确定性测试及本地真实 WebSocket 端到端测试证明。本 Task 不包含私有流、交易写操作、市场特征、历史回放或任何 Gate 批准。
+
 ## Next Action
 
-Execute P2-02 next.
+Execute P2-03 next.
 
 以上内容是依据 `docs/DEVELOPMENT_PLAN.md` 静态依赖生成的进度建议，不改变任何 Task 依赖。
 
