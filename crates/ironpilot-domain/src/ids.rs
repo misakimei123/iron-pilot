@@ -90,3 +90,4 @@ stable_id!(FillId);
 stable_id!(AuditEntryId);
 stable_id!(OutboxMessageId);
 stable_id!(RuntimeInstanceId);
+stable_id!(CorrelationId);

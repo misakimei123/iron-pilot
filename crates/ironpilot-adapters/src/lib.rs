@@ -7,6 +7,7 @@
 
 mod config;
 mod persistence;
+mod resources;
 
 pub use config::{
     CONFIG_PATH_ENV, ENVIRONMENT_FINGERPRINT_ENV, ENVIRONMENT_NAME_ENV, LoadConfigError,
@@ -15,3 +16,4 @@ pub use config::{
 pub use persistence::{
     AuditRow, InstanceLease, LeaseAcquireError, PendingOutboxRow, SqliteRepository, StorageError,
 };
+pub use resources::{ProcessResourceSampler, ResourceSampleError};

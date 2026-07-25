@@ -6,6 +6,7 @@
 
 mod config;
 mod persistence;
+mod runtime;
 
 pub use config::{
     CONFIG_SCHEMA_VERSION_V1, ConfigValidationError, DeploymentEnvironment, EnvironmentFingerprint,
@@ -16,4 +17,9 @@ pub use config::{
 pub use persistence::{
     AuditEntry, OutboxMessage, PersistedSystemState, SystemStateChange, UnixMillis,
     ValidationError as PersistenceValidationError,
+};
+pub use runtime::{
+    BoundedQueueReceiver, BoundedQueueSender, HealthIssue, HealthLevel, HealthMonitor,
+    HealthSnapshot, QueueClass, QueueSendError, QueueSnapshot, ResourceSample, RuntimeEvent,
+    RuntimeSupervisor, ShutdownReport, ShutdownSignal, SpawnError, TaskFailure, TaskImportance,
 };

@@ -12,9 +12,9 @@ mod strategy;
 
 pub use decimal::{DomainDecimal, ParseDomainDecimalError};
 pub use ids::{
-    AuditEntryId, DecisionId, EligibilityEventId, FillId, OrderId, OrderIntentId, OutboxMessageId,
-    ParseStableIdError, RiskDecisionId, RuntimeInstanceId, SnapshotId, TradePlanActionId,
-    TradePlanId,
+    AuditEntryId, CorrelationId, DecisionId, EligibilityEventId, FillId, OrderId, OrderIntentId,
+    OutboxMessageId, ParseStableIdError, RiskDecisionId, RuntimeInstanceId, SnapshotId,
+    TradePlanActionId, TradePlanId,
 };
 pub use instrument::{
     Exchange, InstrumentId, InstrumentType, ParseInstrumentIdError, Symbol,
