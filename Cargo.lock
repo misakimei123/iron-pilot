@@ -292,8 +292,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1aa79e62e7697b8e29b513a68abacf485adcd1fe8284a4316c5ae868e6633327"
 dependencies = [
  "iana-time-zone",
+ "js-sys",
  "num-traits",
  "serde",
+ "wasm-bindgen",
  "windows-link",
 ]
 
@@ -1244,6 +1246,8 @@ name = "ironpilot-application"
 version = "0.1.0"
 dependencies = [
  "ironpilot-domain",
+ "quant-metrics",
+ "rust_decimal",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -1670,6 +1674,44 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "quant-indicators"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "70431b319244d4b4f793f6e210c78de7dc28ff464137a3059da43cdb3f99842a"
+dependencies = [
+ "chrono",
+ "quant-primitives",
+ "rust_decimal",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
+name = "quant-metrics"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "778590b7affc8074edff2ef01abc2f9a1f4af0b57f009085aac1ca82ad755e40"
+dependencies = [
+ "chrono",
+ "quant-indicators",
+ "rust_decimal",
+ "thiserror",
+]
+
+[[package]]
+name = "quant-primitives"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5258141838d4924f7282ead09fcc8c91ceb864f84f9eb6b4ec90be8f7d29caf3"
+dependencies = [
+ "chrono",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]
@@ -3184,6 +3226,7 @@ dependencies = [
  "cfg-if",
  "once_cell",
  "rustversion",
+ "serde",
  "wasm-bindgen-macro",
  "wasm-bindgen-shared",
 ]

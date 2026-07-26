@@ -9,6 +9,7 @@ mod config;
 mod emergency;
 mod execution;
 mod execution_validation;
+mod historical_evaluation;
 mod persistence;
 mod runtime;
 
@@ -43,6 +44,16 @@ pub use execution_validation::{
     ExecutionValidationOutcome, ExecutionValidationPolicy, ExecutionValidationRejection,
     ExecutionValidationRequest, ExecutionValidator, MAX_VALIDATION_REJECTIONS,
     ManagedPositionExecutionFact, SpotOrderPriceLimits,
+};
+pub use historical_evaluation::{
+    FULL_HISTORICAL_EVALUATION_VERSION_V1, FullHistoricalEvaluationError,
+    FullHistoricalEvaluationReport, FullHistoricalStrategyEvaluator,
+    HISTORICAL_METRICS_LIBRARY_VERSION_V1, HistoricalArmMetrics, HistoricalDecisionOutcome,
+    HistoricalEvaluationArm, HistoricalEvaluationManifest, HistoricalEvaluationRecord,
+    HistoricalIndependentReference, HistoricalPeriodMetrics, HistoricalReferenceArmMetrics,
+    HistoricalStressResult, HistoricalStressScenario, HistoricalTradeDifference,
+    MAX_HISTORICAL_EVALUATION_RECORDS, MAX_HISTORICAL_REJECTION_REASONS,
+    MAX_HISTORICAL_STRESS_SCENARIOS,
 };
 pub use ironpilot_domain::{
     AI_DECISION_CONTEXT_SCHEMA_VERSION_V1, AI_TRADING_PLAN_SCHEMA_VERSION_V3,

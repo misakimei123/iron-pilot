@@ -7,6 +7,8 @@ publish.workspace = true
 
 [dependencies]
 ironpilot-domain = { version = "0.1.0", path = "../ironpilot-domain" }
+quant-metrics = { version = "0.7.0", default-features = false }
+rust_decimal = { version = "1.42.1", default-features = false, features = ["std"] }
 serde = { version = "1.0.229", default-features = false, features = ["derive", "std"] }
 serde_json = { version = "1.0.151", default-features = false, features = ["std"] }
 sha2 = { version = "0.10.9", default-features = false }
