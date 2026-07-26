@@ -543,7 +543,12 @@ async fn cleanup_owned_testnet_state(client: &SdkClient) -> Result<(), BybitTest
     }
     let (instrument, bid, _) = market_contract(client).await?;
     let quantity = quantize_down(net_managed, instrument.lot_size_filter.base_precision)?;
-    if quantity < instrument.lot_size_filter.min_order_qty {
+    if !meets_recovery_minimum(
+        quantity,
+        bid,
+        instrument.lot_size_filter.min_order_qty,
+        instrument.lot_size_filter.min_order_amt,
+    ) {
         return Ok(());
     }
     let recovery_link = owned_link(&Uuid::new_v4().simple().to_string(), 'r');
@@ -1018,6 +1023,15 @@ fn enforce_quote_cap(
     }
 }
 
+fn meets_recovery_minimum(
+    quantity: Decimal,
+    reference_price: Decimal,
+    minimum_quantity: Decimal,
+    minimum_amount: Decimal,
+) -> bool {
+    quantity >= minimum_quantity && quantity * reference_price >= minimum_amount
+}
+
 fn quantize_down(value: Decimal, step: Decimal) -> Result<Decimal, BybitTestnetSmokeError> {
     if value <= Decimal::ZERO || step <= Decimal::ZERO {
         Err(BybitTestnetSmokeError::MissingMarketFact)
@@ -1258,6 +1272,22 @@ mod tests {
         let mapping = map_planned_spot_order_to_testnet(BYBIT_TESTNET_SYMBOL, "ip4-f-safe", &order)
             .expect("mapping");
         assert!(enforce_quote_cap(mapping.request(), Decimal::new(11, 0)).is_err());
+    }
+
+    #[test]
+    fn recovery_dust_must_meet_quantity_and_amount_minimums() {
+        assert!(!meets_recovery_minimum(
+            Decimal::new(1, 6),
+            Decimal::new(65_000, 0),
+            Decimal::new(1, 6),
+            Decimal::new(5, 0),
+        ));
+        assert!(meets_recovery_minimum(
+            Decimal::new(80, 6),
+            Decimal::new(65_000, 0),
+            Decimal::new(1, 6),
+            Decimal::new(5, 0),
+        ));
     }
 
     #[test]
