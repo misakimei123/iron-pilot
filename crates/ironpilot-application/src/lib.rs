@@ -12,9 +12,10 @@ mod persistence;
 mod runtime;
 
 pub use ai::{
-    AI_TRADING_PROMPT_VERSION_V1, AiPlanRejectionFeedback, AiPromptError, AiTradingPrompt,
-    AiTradingPromptHash, MAX_REPLAN_REASON_LENGTH, MAX_REPLAN_REASONS,
-    PROMPT_CANDLES_PER_TIMEFRAME,
+    AI_TRADING_PROMPT_VERSION_V1, AI_TRADING_PROMPT_VERSION_V2, AiPlanRejectionFeedback,
+    AiPromptError, AiRuntimeTradePlanFact, AiTradingPrompt, AiTradingPromptHash,
+    AiTradingRuntimeState, AiTradingRuntimeStateHash, MAX_REPLAN_REASON_LENGTH, MAX_REPLAN_REASONS,
+    MAX_RUNTIME_ACTIVE_TRADE_PLANS, MAX_RUNTIME_STATE_BYTES, PROMPT_CANDLES_PER_TIMEFRAME,
 };
 pub use config::{
     CONFIG_SCHEMA_VERSION_V2, ConfigValidationError, DeploymentEnvironment, EnvironmentFingerprint,

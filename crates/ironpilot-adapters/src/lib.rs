@@ -11,6 +11,7 @@ mod config;
 mod deepseek;
 mod historical;
 mod paper_execution;
+mod paper_runtime;
 mod persistence;
 mod resources;
 
@@ -41,10 +42,18 @@ pub use historical::{
     HistoricalLedgerHash, HistoricalLedgerRecord, HistoricalLedgerRecordKind,
     HistoricalValidationFacts, MAX_MINIMAL_HISTORICAL_OBSERVATIONS,
     MINIMAL_HISTORICAL_HARNESS_VERSION_V1, MinimalHistoricalHarnessError,
-    MinimalHistoricalReplayInput, MinimalHistoricalReplayReport, SqliteMinimalHistoricalHarness,
+    MinimalHistoricalReplayInput, MinimalHistoricalReplayReport, OwnedExecutionValidationFacts,
+    SqliteMinimalHistoricalHarness,
 };
 pub use paper_execution::{
     PaperExecutionAdapterError, PaperExecutionReport, SqlitePaperExecutionPort,
+};
+pub use paper_runtime::{
+    MAX_PAPER_RUNTIME_ATTEMPTS, MAX_PAPER_RUNTIME_OBSERVATIONS, PAPER_RUNTIME_VERSION_V1,
+    PaperRuntimeActionAttempt, PaperRuntimeAiProvider, PaperRuntimeCycleId, PaperRuntimeCycleInput,
+    PaperRuntimeCycleReport, PaperRuntimeEffect, PaperRuntimeError, PaperRuntimeFacts,
+    PaperRuntimeOutcome, PaperRuntimeProviderError, PaperRuntimeProviderFuture,
+    RuntimeAiGeneration, SqliteAiPaperRuntime,
 };
 pub use persistence::{
     AiTradePlanTraceRow, AuditRow, ExecutionValidationRow, InstanceLease, LeaseAcquireError,

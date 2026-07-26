@@ -10,9 +10,10 @@ use async_openai::Client as OpenAiClient;
 use async_openai::config::OpenAIConfig;
 use async_openai::error::OpenAIError;
 use async_openai::middleware::HttpRequestFactory;
+#[cfg(test)]
+use ironpilot_application::AI_TRADING_PROMPT_VERSION_V1;
 use ironpilot_application::{
-    AI_TRADING_PROMPT_VERSION_V1, AiPlanRejectionFeedback, AiPromptError, AiTradingPrompt,
-    LlmLimits,
+    AiPlanRejectionFeedback, AiPromptError, AiTradingPrompt, AiTradingRuntimeState, LlmLimits,
 };
 use ironpilot_domain::{
     AiDecisionContext, AiDecisionContextId, AiProviderResponseId, AiRawResponse, AiTradingPlan,
@@ -753,6 +754,16 @@ impl DeepSeekAiTradingPlanProvider {
         self.execute(context, prompt).await
     }
 
+    pub async fn generate_runtime_plan(
+        &self,
+        context: &AiDecisionContext,
+        runtime_state: &AiTradingRuntimeState,
+    ) -> Result<DeepSeekPlanGeneration, DeepSeekProviderError> {
+        let prompt =
+            AiTradingPrompt::initial_runtime(context, runtime_state).map_err(prompt_error)?;
+        self.execute(context, prompt).await
+    }
+
     pub async fn replan_after_rejection<I, S>(
         &self,
         context: &AiDecisionContext,
@@ -773,22 +784,52 @@ impl DeepSeekAiTradingPlanProvider {
                     _ => prompt_error(error),
                 }
             })?;
-        {
-            let mut replanned = self.replanned_contexts.lock().map_err(|_| {
-                DeepSeekProviderError::new(
-                    DeepSeekProviderErrorKind::ReplanLimitExceeded,
-                    "DeepSeek replan state is unavailable",
-                )
-            })?;
-            if !replanned.insert(context.context_id()) {
-                return Err(DeepSeekProviderError::new(
-                    DeepSeekProviderErrorKind::ReplanLimitExceeded,
-                    "the Decision Context has already consumed its one replan",
-                ));
-            }
-        }
+        self.reserve_replan(context)?;
         let prompt = AiTradingPrompt::replan(context, &feedback).map_err(prompt_error)?;
         self.execute(context, prompt).await
+    }
+
+    pub async fn replan_runtime_after_rejection<I, S>(
+        &self,
+        context: &AiDecisionContext,
+        runtime_state: &AiTradingRuntimeState,
+        rejected_plan: &AiTradingPlan,
+        reasons: I,
+    ) -> Result<DeepSeekPlanGeneration, DeepSeekProviderError>
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<Box<str>>,
+    {
+        let feedback =
+            AiPlanRejectionFeedback::new(context, rejected_plan, reasons).map_err(|error| {
+                match error {
+                    AiPromptError::ReplanProvenanceMismatch => DeepSeekProviderError::new(
+                        DeepSeekProviderErrorKind::ReplanProvenanceMismatch,
+                        error.to_string().into_boxed_str(),
+                    ),
+                    _ => prompt_error(error),
+                }
+            })?;
+        self.reserve_replan(context)?;
+        let prompt = AiTradingPrompt::replan_runtime(context, runtime_state, &feedback)
+            .map_err(prompt_error)?;
+        self.execute(context, prompt).await
+    }
+
+    fn reserve_replan(&self, context: &AiDecisionContext) -> Result<(), DeepSeekProviderError> {
+        let mut replanned = self.replanned_contexts.lock().map_err(|_| {
+            DeepSeekProviderError::new(
+                DeepSeekProviderErrorKind::ReplanLimitExceeded,
+                "DeepSeek replan state is unavailable",
+            )
+        })?;
+        if !replanned.insert(context.context_id()) {
+            return Err(DeepSeekProviderError::new(
+                DeepSeekProviderErrorKind::ReplanLimitExceeded,
+                "the Decision Context has already consumed its one replan",
+            ));
+        }
+        Ok(())
     }
 
     #[must_use]
@@ -1369,7 +1410,7 @@ fn attempt_evidence(
     DeepSeekAttemptEvidence {
         attempt_id,
         context_id: context.context_id(),
-        prompt_version: AI_TRADING_PROMPT_VERSION_V1,
+        prompt_version: prompt.version(),
         prompt_hash: prompt.prompt_hash().to_string().into_boxed_str(),
         model: config.model.as_str().into(),
         is_replan: prompt.is_replan(),
@@ -1461,12 +1502,14 @@ mod tests {
     use core::str::FromStr;
     use std::time::Duration;
 
-    use ironpilot_application::{AuditEntry, UnixMillis};
+    use ironpilot_application::{
+        AI_TRADING_PROMPT_VERSION_V2, AiRuntimeTradePlanFact, AuditEntry, UnixMillis,
+    };
     use ironpilot_domain::{
         AssetCode, AuditEntryId, ClosedCandle, ExchangeAssetBalance, ExchangeServerTime,
         FEATURE_CANDLE_WINDOW, InstrumentId, InstrumentRulesSnapshot, InstrumentTradingStatus,
         LocalAssetBalance, MarketDataSource, MarketFeatureEngine, MarketTimeframe,
-        PortfolioReconciler, RulesHash, RuntimeInstanceId, TopOfBook,
+        PortfolioReconciler, RulesHash, RuntimeInstanceId, TopOfBook, TradePlanId,
         validated_spot_instrument_rules,
     };
     use serde_json::{Value, json};
@@ -1576,6 +1619,125 @@ mod tests {
                 "prompt must not inject {forbidden}"
             );
         }
+    }
+
+    #[test]
+    fn runtime_prompt_binds_active_plan_and_latest_execution_without_changing_v1() {
+        let context = decision_context(10);
+        let original_plan = AiTradingPlan::from_json(&plan_json(&context, "OPEN_LONG", 100))
+            .expect("original plan should be valid");
+        let target = stable_id::<TradePlanId>(9_000);
+        let runtime_state = AiTradingRuntimeState::new(vec![
+            AiRuntimeTradePlanFact::new(
+                target,
+                original_plan,
+                json!({
+                    "status": "PARTIALLY_FILLED",
+                    "filled_quantity": "0.06",
+                    "remaining_quantity": "0.04"
+                }),
+            )
+            .expect("runtime trade plan fact should be valid"),
+        ])
+        .expect("runtime state should be valid");
+
+        let v1 = AiTradingPrompt::initial(&context).expect("v1 prompt must build");
+        let v1_payload: Value =
+            serde_json::from_str(v1.user_message()).expect("v1 prompt must be JSON");
+        assert_eq!(v1.version(), AI_TRADING_PROMPT_VERSION_V1);
+        assert!(v1_payload.get("runtime_state").is_none());
+
+        let v2 = AiTradingPrompt::initial_runtime(&context, &runtime_state)
+            .expect("runtime prompt must build");
+        let payload: Value =
+            serde_json::from_str(v2.user_message()).expect("runtime prompt must be JSON");
+        assert_eq!(v2.version(), AI_TRADING_PROMPT_VERSION_V2);
+        assert_eq!(
+            payload["runtime_state"]["state_hash"],
+            runtime_state.state_hash().to_string()
+        );
+        assert_eq!(
+            payload["runtime_state"]["facts"]["active_trade_plans"][0]["trade_plan_id"],
+            target.to_string()
+        );
+        assert_eq!(
+            payload["runtime_state"]["facts"]["active_trade_plans"][0]["original_ai_plan"]["action"],
+            "OPEN_LONG"
+        );
+        assert_eq!(
+            payload["runtime_state"]["facts"]["active_trade_plans"][0]["latest_execution_result"]["filled_quantity"],
+            "0.06"
+        );
+    }
+
+    #[test]
+    fn runtime_prompt_rejects_a_plan_for_another_instrument() {
+        let context = decision_context(11);
+        let mut other_plan: Value = serde_json::from_str(&plan_json(&context, "OPEN_LONG", 101))
+            .expect("plan fixture must be JSON");
+        other_plan["instrument_id"] = json!("bybit:spot:ETHUSDT");
+        let other_plan = AiTradingPlan::from_json(&other_plan.to_string())
+            .expect("other-instrument plan should be valid");
+        let runtime_state = AiTradingRuntimeState::new(vec![
+            AiRuntimeTradePlanFact::new(
+                stable_id::<TradePlanId>(9_001),
+                other_plan,
+                json!({"status": "FILLED"}),
+            )
+            .expect("runtime trade plan fact should be valid"),
+        ])
+        .expect("runtime state should be valid");
+
+        assert_eq!(
+            AiTradingPrompt::initial_runtime(&context, &runtime_state)
+                .expect_err("cross-instrument runtime state must fail"),
+            AiPromptError::RuntimeStateInstrumentMismatch
+        );
+    }
+
+    #[tokio::test]
+    async fn runtime_provider_sends_prompt_v2_with_the_management_target() {
+        let context = decision_context(12);
+        let original_plan = AiTradingPlan::from_json(&plan_json(&context, "OPEN_LONG", 102))
+            .expect("original plan should be valid");
+        let target = stable_id::<TradePlanId>(9_000);
+        let runtime_state = AiTradingRuntimeState::new(vec![
+            AiRuntimeTradePlanFact::new(
+                target,
+                original_plan,
+                json!({"status": "FILLED", "filled_quantity": "0.10"}),
+            )
+            .expect("runtime trade plan fact should be valid"),
+        ])
+        .expect("runtime state should be valid");
+        let response_plan = plan_json(&context, "HOLD", 103);
+        let (base_url, server) = spawn_http_server(vec![MockResponse::ok(completion_body(
+            &response_plan,
+            "stop",
+        ))])
+        .await;
+        let provider = test_provider(&base_url, 1, Duration::from_secs(2));
+
+        let generated = provider
+            .generate_runtime_plan(&context, &runtime_state)
+            .await
+            .expect("runtime management plan should generate");
+        assert_eq!(generated.plan().action().as_str(), "HOLD");
+        assert_eq!(
+            generated.evidence().prompt_version(),
+            AI_TRADING_PROMPT_VERSION_V2
+        );
+        let requests = server.await.expect("mock server");
+        let request: Value = serde_json::from_str(&requests[0]).expect("request JSON");
+        let user_message = request["messages"][1]["content"]
+            .as_str()
+            .expect("runtime provider user message should be text");
+        let prompt_payload: Value =
+            serde_json::from_str(user_message).expect("runtime provider prompt should be JSON");
+        assert_eq!(
+            prompt_payload["runtime_state"]["facts"]["active_trade_plans"][0]["trade_plan_id"],
+            target.to_string()
+        );
     }
 
     #[tokio::test]

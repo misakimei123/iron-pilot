@@ -36,6 +36,8 @@ pub struct HistoricalValidationFacts {
     validated_at_unix_millis: u64,
 }
 
+pub type OwnedExecutionValidationFacts = HistoricalValidationFacts;
+
 impl HistoricalValidationFacts {
     #[allow(clippy::too_many_arguments)]
     #[must_use]

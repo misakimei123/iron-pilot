@@ -648,7 +648,11 @@ impl SqliteRepository {
         audit: &AuditEntry,
     ) -> Result<PersistenceEffect, StorageError> {
         if evidence.context_id() != context.context_id()
-            || evidence.prompt_version() != ironpilot_application::AI_TRADING_PROMPT_VERSION_V1
+            || !matches!(
+                evidence.prompt_version(),
+                ironpilot_application::AI_TRADING_PROMPT_VERSION_V1
+                    | ironpilot_application::AI_TRADING_PROMPT_VERSION_V2
+            )
             || evidence.requested_at_unix_millis() < context.as_of_unix_millis()
             || context.is_expired_at(evidence.requested_at_unix_millis())
         {
@@ -1974,17 +1978,19 @@ impl From<LeaseAcquireError> for StorageError {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::VecDeque;
     use std::path::{Path, PathBuf};
     use std::str::FromStr;
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::Mutex as StdMutex;
+    use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
     use super::{LeaseAcquireError, PersistenceEffect, SqliteRepository, StorageError};
     use ironpilot_application::{
-        AuditEntry, ExecutionAuthorization, ExecutionMode, ExecutionOrderIdSet, ExecutionOrderIds,
-        ExecutionValidationDecision, ExecutionValidationOutcome, ExecutionValidationPolicy,
-        OutboxMessage, PaperExecutionError, PaperExecutionPolicy, PaperMarketObservation,
-        SpotExecutionPort, SpotExecutionRequest, SpotOrderPriceLimits, SystemStateChange,
-        UnixMillis,
+        AiRuntimeTradePlanFact, AiTradingRuntimeState, AuditEntry, ExecutionAuthorization,
+        ExecutionMode, ExecutionOrderIdSet, ExecutionOrderIds, ExecutionValidationDecision,
+        ExecutionValidationOutcome, ExecutionValidationPolicy, OutboxMessage, PaperExecutionError,
+        PaperExecutionPolicy, PaperMarketObservation, SpotExecutionPort, SpotExecutionRequest,
+        SpotOrderPriceLimits, SystemStateChange, UnixMillis,
     };
     use ironpilot_domain::{
         AccountOrderFact, AccountOrderSide, AccountOrderStatus, AiDecisionContext,
@@ -1996,13 +2002,16 @@ mod tests {
         MarketFeatureEngine, MarketTimeframe, OrderId, OrderIntentId, OutboxMessageId,
         PortfolioFill, PortfolioFillSide, PortfolioReconciler, ReconciliationRunId, RulesHash,
         RuntimeInstanceId, SnapshotId, SpotInstrumentRules, SystemState, TopOfBook,
-        TradePlanActionId, TradePlanId, validated_spot_instrument_rules,
+        TradePlanActionId, TradePlanId, TradePlanState, validated_spot_instrument_rules,
     };
     use serde_json::json;
 
     use crate::{
         HistoricalValidationFacts, MinimalHistoricalHarnessError, MinimalHistoricalReplayInput,
-        SqliteMinimalHistoricalHarness,
+        PaperRuntimeActionAttempt, PaperRuntimeAiProvider, PaperRuntimeCycleId,
+        PaperRuntimeCycleInput, PaperRuntimeEffect, PaperRuntimeError, PaperRuntimeFacts,
+        PaperRuntimeOutcome, PaperRuntimeProviderError, PaperRuntimeProviderFuture,
+        RuntimeAiGeneration, SqliteAiPaperRuntime, SqliteMinimalHistoricalHarness,
     };
 
     static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -2051,6 +2060,7 @@ mod tests {
                 "paper_market_observations",
                 "paper_order_specs",
                 "paper_orders",
+                "paper_runtime_events",
                 "reconciliation_runs",
                 "risk_decisions",
                 "runtime_instance_lease",
@@ -2629,6 +2639,367 @@ mod tests {
             ai_table_count(&fixture.repository, "ai_decision_contexts").await,
             0,
             "look-ahead rejection must happen before any ledger write"
+        );
+        fixture.close().await;
+    }
+
+    #[tokio::test]
+    async fn ai_paper_runtime_opens_reviews_exits_and_restarts_without_duplicate_ai() {
+        let fixture = Fixture::new().await;
+        let owner = runtime_id(800);
+        fixture
+            .repository
+            .acquire_instance_lease(
+                owner,
+                timestamp(AI_END_AT),
+                std::time::Duration::from_secs(120),
+            )
+            .await
+            .expect("paper runtime lease should be acquired");
+        let target_plan = trade_plan_id(800);
+        let provider = ScriptedRuntimeProvider::new(vec![
+            ScriptedRuntimeStep::plan(800, "OPEN_LONG", None, "2.00"),
+            ScriptedRuntimeStep::plan(801, "EXIT", Some(target_plan), "0"),
+        ]);
+        let policy =
+            PaperExecutionPolicy::new(decimal("0.001"), decimal("0.002"), decimal("0.001"))
+                .expect("paper runtime policy should be valid");
+        let runtime = SqliteAiPaperRuntime::new(&fixture.repository, owner, &provider, policy);
+
+        let (open_facts, open_validation) =
+            paper_runtime_fact_bundle(800, "BTCUSDT", "BTC", false, false, false);
+        let open_input = PaperRuntimeCycleInput::new(
+            cycle_id(800),
+            u64::try_from(AI_END_AT).expect("timestamp fits u64") + 1_000,
+            open_facts,
+            vec![paper_runtime_attempt(
+                800,
+                target_plan,
+                open_validation,
+                true,
+                0,
+            )],
+            vec![
+                paper_runtime_observation(800, "BTCUSDT", 6_000, "209", "211", "0.04"),
+                paper_runtime_observation(801, "BTCUSDT", 7_000, "209", "211", "0.06"),
+            ],
+        )
+        .expect("OPEN_LONG runtime input should be valid");
+        let open_report = runtime
+            .run_cycle(&open_input)
+            .await
+            .expect("OPEN_LONG runtime cycle should succeed");
+        assert_eq!(open_report.outcome(), PaperRuntimeOutcome::Executed);
+        assert_eq!(open_report.action(), Some("OPEN_LONG"));
+        assert!(open_report.context_hash().is_some());
+        assert!(open_report.plan_hash().is_some());
+        assert!(open_report.validation_hash().is_some());
+        assert!(open_report.execution_request_hash().is_some());
+        assert_eq!(open_report.fill_ids().len(), 2);
+        assert_eq!(open_report.local_parameter_mutations(), 0);
+
+        let (exit_facts, exit_validation) =
+            paper_runtime_fact_bundle(801, "BTCUSDT", "BTC", true, false, false);
+        let exit_input = PaperRuntimeCycleInput::new(
+            cycle_id(801),
+            u64::try_from(AI_END_AT).expect("timestamp fits u64") + 10_000,
+            exit_facts,
+            vec![paper_runtime_attempt(
+                801,
+                target_plan,
+                exit_validation,
+                false,
+                9_000,
+            )],
+            vec![paper_runtime_observation(
+                802, "BTCUSDT", 16_000, "218", "220", "0.10",
+            )],
+        )
+        .expect("EXIT runtime input should be valid");
+        let exit_report = runtime
+            .run_cycle(&exit_input)
+            .await
+            .expect("AI review EXIT cycle should succeed");
+        assert_eq!(exit_report.outcome(), PaperRuntimeOutcome::Executed);
+        assert_eq!(exit_report.action(), Some("EXIT"));
+        assert_eq!(exit_report.fill_ids().len(), 1);
+        assert_eq!(
+            fixture
+                .repository
+                .managed_position(&runtime_instrument("BTCUSDT"), asset("BTC"))
+                .await
+                .expect("managed position should be readable")
+                .quantity(),
+            DomainDecimal::ZERO
+        );
+        let plan_state: String =
+            sqlx::query_scalar("SELECT state FROM trade_plans WHERE trade_plan_id = ?")
+                .bind(target_plan.to_string())
+                .fetch_one(fixture.repository.pool())
+                .await
+                .expect("closed TradePlan should be readable");
+        assert_eq!(plan_state, "CLOSED");
+
+        let calls_before_restart = provider.calls();
+        let replayed = runtime
+            .run_cycle(&exit_input)
+            .await
+            .expect("completed cycle restart should recover the terminal report");
+        assert_eq!(replayed.effect(), PaperRuntimeEffect::DuplicateNoEffect);
+        assert_eq!(
+            provider.calls(),
+            calls_before_restart,
+            "restart must not call AI or automatically open a position"
+        );
+        assert_runtime_trace_complete(&fixture.repository, cycle_id(800), true).await;
+        assert_runtime_trace_complete(&fixture.repository, cycle_id(801), true).await;
+        let runtime_trace_update =
+            sqlx::query("UPDATE paper_runtime_events SET event_type = 'TAMPERED'")
+                .execute(fixture.repository.pool())
+                .await;
+        assert!(
+            runtime_trace_update.is_err(),
+            "paper runtime trace must be append-only"
+        );
+        fixture.close().await;
+    }
+
+    #[tokio::test]
+    async fn ai_paper_runtime_failures_are_traced_and_create_zero_orders() {
+        let fixture = Fixture::new().await;
+        let owner = runtime_id(810);
+        fixture
+            .repository
+            .acquire_instance_lease(
+                owner,
+                timestamp(AI_END_AT),
+                std::time::Duration::from_secs(120),
+            )
+            .await
+            .expect("paper runtime lease should be acquired");
+        let provider = ScriptedRuntimeProvider::new(vec![
+            ScriptedRuntimeStep::failure("CALL_BUDGET_EXHAUSTED"),
+            ScriptedRuntimeStep::failure("INVALID_PLAN"),
+            ScriptedRuntimeStep::plan(812, "OPEN_LONG", None, "100.00"),
+            ScriptedRuntimeStep::plan(813, "NO_TRADE", None, "0"),
+            ScriptedRuntimeStep::plan(815, "OPEN_LONG", None, "2.00"),
+        ]);
+        let policy =
+            PaperExecutionPolicy::new(decimal("0.001"), decimal("0.002"), decimal("0.001"))
+                .expect("paper runtime policy should be valid");
+        let runtime = SqliteAiPaperRuntime::new(&fixture.repository, owner, &provider, policy);
+
+        for (sequence, expected_code) in [
+            (810_u128, "CALL_BUDGET_EXHAUSTED"),
+            (811_u128, "INVALID_PLAN"),
+        ] {
+            let (facts, validation) =
+                paper_runtime_fact_bundle(sequence, "BTCUSDT", "BTC", false, false, false);
+            let input = PaperRuntimeCycleInput::new(
+                cycle_id(sequence),
+                u64::try_from(AI_END_AT).expect("timestamp fits u64") + 1_000,
+                facts,
+                vec![paper_runtime_attempt(
+                    sequence,
+                    trade_plan_id(sequence),
+                    validation,
+                    true,
+                    0,
+                )],
+                Vec::new(),
+            )
+            .expect("provider failure input should be valid");
+            let report = runtime
+                .run_cycle(&input)
+                .await
+                .expect("provider failure should fail closed as NO_ACTION");
+            assert_eq!(report.outcome(), PaperRuntimeOutcome::ProviderNoAction);
+            assert_eq!(report.failure_code(), Some(expected_code));
+            assert_runtime_trace_complete(&fixture.repository, cycle_id(sequence), false).await;
+        }
+
+        let (facts, first_validation) =
+            paper_runtime_fact_bundle(812, "BTCUSDT", "BTC", false, false, false);
+        let (_, second_validation) =
+            paper_runtime_fact_bundle(813, "BTCUSDT", "BTC", false, false, false);
+        let replan_input = PaperRuntimeCycleInput::new(
+            cycle_id(812),
+            u64::try_from(AI_END_AT).expect("timestamp fits u64") + 1_000,
+            facts,
+            vec![
+                paper_runtime_attempt(812, trade_plan_id(812), first_validation, true, 0),
+                paper_runtime_attempt(813, trade_plan_id(813), second_validation, false, 0),
+            ],
+            Vec::new(),
+        )
+        .expect("bounded replan input should be valid");
+        let replan_report = runtime
+            .run_cycle(&replan_input)
+            .await
+            .expect("over-authorized plan should permit one bounded AI replan");
+        assert_eq!(replan_report.outcome(), PaperRuntimeOutcome::NoTrade);
+        assert_eq!(replan_report.provider_attempts(), 2);
+        assert_eq!(replan_report.validation_attempts(), 2);
+
+        let (stale_facts, stale_validation) =
+            paper_runtime_fact_bundle(814, "BTCUSDT", "BTC", false, true, false);
+        let stale_input = PaperRuntimeCycleInput::new(
+            cycle_id(814),
+            u64::try_from(AI_END_AT).expect("timestamp fits u64") + 70_000,
+            stale_facts,
+            vec![paper_runtime_attempt(
+                814,
+                trade_plan_id(814),
+                stale_validation,
+                true,
+                69_000,
+            )],
+            Vec::new(),
+        )
+        .expect("stale runtime input should be structurally valid");
+        let stale_report = runtime
+            .run_cycle(&stale_input)
+            .await
+            .expect("stale facts should produce a traced context rejection");
+        assert_eq!(stale_report.outcome(), PaperRuntimeOutcome::ContextRejected);
+
+        let (changed_facts, changed_validation) =
+            paper_runtime_fact_bundle(815, "BTCUSDT", "BTC", false, false, true);
+        let changed_input = PaperRuntimeCycleInput::new(
+            cycle_id(815),
+            u64::try_from(AI_END_AT).expect("timestamp fits u64") + 1_000,
+            changed_facts,
+            vec![paper_runtime_attempt(
+                815,
+                trade_plan_id(815),
+                changed_validation,
+                true,
+                0,
+            )],
+            Vec::new(),
+        )
+        .expect("changed account input should be valid");
+        let changed_report = runtime
+            .run_cycle(&changed_input)
+            .await
+            .expect("post-Context order change should be traced");
+        assert_eq!(
+            changed_report.outcome(),
+            PaperRuntimeOutcome::ValidationRejected
+        );
+        assert_eq!(changed_report.failure_code(), Some("VALIDATION_REJECTED"));
+
+        let (recovery_facts, recovery_validation) =
+            paper_runtime_fact_bundle(816, "BTCUSDT", "BTC", false, false, false);
+        let recovery_input = PaperRuntimeCycleInput::new(
+            cycle_id(816),
+            u64::try_from(AI_END_AT).expect("timestamp fits u64") + 1_000,
+            recovery_facts,
+            vec![paper_runtime_attempt(
+                816,
+                trade_plan_id(816),
+                recovery_validation,
+                true,
+                0,
+            )],
+            Vec::new(),
+        )
+        .expect("recovery input should be valid");
+        sqlx::query(
+            "
+            INSERT INTO paper_runtime_events(
+                event_id, cycle_id, sequence, instrument_id, context_id,
+                event_type, occurred_at, payload_json
+            )
+            VALUES (?, ?, 0, ?, NULL, 'CONTEXT_BUILT', ?, '{}')
+            ",
+        )
+        .bind(uuid_text(816 + 90_000))
+        .bind(cycle_id(816).to_string())
+        .bind(runtime_instrument("BTCUSDT").to_string())
+        .bind(AI_END_AT + 1_000)
+        .execute(fixture.repository.pool())
+        .await
+        .expect("incomplete runtime trace fixture should insert");
+        let calls_before_recovery = provider.calls();
+        assert!(matches!(
+            runtime.run_cycle(&recovery_input).await,
+            Err(PaperRuntimeError::RecoveryRequired)
+        ));
+        assert_eq!(
+            provider.calls(),
+            calls_before_recovery,
+            "incomplete restart must restore persisted facts before calling AI"
+        );
+
+        let order_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM order_intents")
+            .fetch_one(fixture.repository.pool())
+            .await
+            .expect("order count should be readable");
+        assert_eq!(
+            order_count, 0,
+            "budget, invalid output, over-authorization/replan NO_TRADE and stale facts must create zero orders"
+        );
+        fixture.close().await;
+    }
+
+    #[tokio::test]
+    async fn ai_paper_runtime_supports_multiple_spot_instruments_without_shared_state() {
+        let fixture = Fixture::new().await;
+        let owner = runtime_id(820);
+        fixture
+            .repository
+            .acquire_instance_lease(
+                owner,
+                timestamp(AI_END_AT),
+                std::time::Duration::from_secs(120),
+            )
+            .await
+            .expect("paper runtime lease should be acquired");
+        let provider = ScriptedRuntimeProvider::new(vec![
+            ScriptedRuntimeStep::plan(820, "OPEN_LONG", None, "2.00"),
+            ScriptedRuntimeStep::plan(821, "OPEN_LONG", None, "2.00"),
+        ]);
+        let policy =
+            PaperExecutionPolicy::new(decimal("0.001"), decimal("0.002"), decimal("0.001"))
+                .expect("paper runtime policy should be valid");
+        let runtime = SqliteAiPaperRuntime::new(&fixture.repository, owner, &provider, policy);
+
+        for (sequence, symbol, base) in [(820_u128, "BTCUSDT", "BTC"), (821_u128, "ETHUSDT", "ETH")]
+        {
+            let (facts, validation) =
+                paper_runtime_fact_bundle(sequence, symbol, base, false, false, false);
+            let input = PaperRuntimeCycleInput::new(
+                cycle_id(sequence),
+                u64::try_from(AI_END_AT).expect("timestamp fits u64") + 1_000,
+                facts,
+                vec![paper_runtime_attempt(
+                    sequence,
+                    trade_plan_id(sequence),
+                    validation,
+                    true,
+                    0,
+                )],
+                Vec::new(),
+            )
+            .expect("multi-instrument cycle should be valid");
+            assert_eq!(
+                runtime
+                    .run_cycle(&input)
+                    .await
+                    .expect("multi-instrument cycle should succeed")
+                    .outcome(),
+                PaperRuntimeOutcome::Executed
+            );
+        }
+        let instruments: Vec<String> =
+            sqlx::query_scalar("SELECT instrument_id FROM trade_plans ORDER BY instrument_id")
+                .fetch_all(fixture.repository.pool())
+                .await
+                .expect("runtime TradePlan instruments should be readable");
+        assert_eq!(
+            instruments,
+            vec!["bybit:spot:BTCUSDT", "bybit:spot:ETHUSDT"]
         );
         fixture.close().await;
     }
@@ -3833,6 +4204,632 @@ mod tests {
             );
         }
         rows
+    }
+
+    #[derive(Clone, Debug)]
+    enum ScriptedRuntimeStep {
+        Plan {
+            sequence: u128,
+            action: &'static str,
+            target_trade_plan_id: Option<TradePlanId>,
+            declared_max_loss_quote: &'static str,
+        },
+        Failure(&'static str),
+    }
+
+    impl ScriptedRuntimeStep {
+        const fn plan(
+            sequence: u128,
+            action: &'static str,
+            target_trade_plan_id: Option<TradePlanId>,
+            declared_max_loss_quote: &'static str,
+        ) -> Self {
+            Self::Plan {
+                sequence,
+                action,
+                target_trade_plan_id,
+                declared_max_loss_quote,
+            }
+        }
+
+        const fn failure(code: &'static str) -> Self {
+            Self::Failure(code)
+        }
+    }
+
+    #[derive(Debug)]
+    struct ScriptedRuntimeProvider {
+        steps: StdMutex<VecDeque<ScriptedRuntimeStep>>,
+        calls: AtomicUsize,
+    }
+
+    impl ScriptedRuntimeProvider {
+        fn new(steps: Vec<ScriptedRuntimeStep>) -> Self {
+            Self {
+                steps: StdMutex::new(steps.into()),
+                calls: AtomicUsize::new(0),
+            }
+        }
+
+        fn calls(&self) -> usize {
+            self.calls.load(Ordering::Acquire)
+        }
+
+        fn next(
+            &self,
+            context: &AiDecisionContext,
+            runtime_state: &AiTradingRuntimeState,
+        ) -> Result<RuntimeAiGeneration, ScriptedRuntimeError> {
+            self.calls.fetch_add(1, Ordering::AcqRel);
+            let step = self
+                .steps
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .pop_front()
+                .expect("scripted runtime provider must have a response");
+            match step {
+                ScriptedRuntimeStep::Plan {
+                    sequence,
+                    action,
+                    target_trade_plan_id,
+                    declared_max_loss_quote,
+                } => {
+                    if let Some(target) = target_trade_plan_id {
+                        assert!(
+                            runtime_state
+                                .active_trade_plans()
+                                .iter()
+                                .any(|fact| fact.trade_plan_id() == target),
+                            "managed action target must be present in runtime AI state"
+                        );
+                    }
+                    Ok(scripted_runtime_generation(
+                        context,
+                        sequence,
+                        action,
+                        target_trade_plan_id,
+                        declared_max_loss_quote,
+                    ))
+                }
+                ScriptedRuntimeStep::Failure(code) => Err(ScriptedRuntimeError(code)),
+            }
+        }
+    }
+
+    impl PaperRuntimeAiProvider for ScriptedRuntimeProvider {
+        type Error = ScriptedRuntimeError;
+
+        fn generate<'a>(
+            &'a self,
+            context: &'a AiDecisionContext,
+            runtime_state: &'a AiTradingRuntimeState,
+        ) -> PaperRuntimeProviderFuture<'a, RuntimeAiGeneration, Self::Error> {
+            Box::pin(async move { self.next(context, runtime_state) })
+        }
+
+        fn replan<'a>(
+            &'a self,
+            context: &'a AiDecisionContext,
+            runtime_state: &'a AiTradingRuntimeState,
+            _rejected_plan: &'a AiTradingPlan,
+            _reasons: Vec<Box<str>>,
+        ) -> PaperRuntimeProviderFuture<'a, RuntimeAiGeneration, Self::Error> {
+            Box::pin(async move { self.next(context, runtime_state) })
+        }
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    struct ScriptedRuntimeError(&'static str);
+
+    impl std::fmt::Display for ScriptedRuntimeError {
+        fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str(self.0)
+        }
+    }
+
+    impl std::error::Error for ScriptedRuntimeError {}
+
+    impl PaperRuntimeProviderError for ScriptedRuntimeError {
+        fn code(&self) -> &'static str {
+            self.0
+        }
+
+        fn evidence(&self) -> Option<&crate::DeepSeekAttemptEvidence> {
+            None
+        }
+    }
+
+    fn scripted_runtime_generation(
+        context: &AiDecisionContext,
+        sequence: u128,
+        action: &str,
+        target_trade_plan_id: Option<TradePlanId>,
+        declared_max_loss_quote: &str,
+    ) -> RuntimeAiGeneration {
+        let plan_id =
+            AiTradingPlanId::from_str(&uuid_text(sequence + 40_000)).expect("plan ID is valid");
+        let now = context.as_of_unix_millis();
+        let valid_until = now + 20_000;
+        let mut value = json!({
+            "schema_version": "3.0",
+            "plan_id": plan_id.to_string(),
+            "context_id": context.context_id().to_string(),
+            "instrument_id": context.instrument_id().to_string(),
+            "action": action,
+            "valid_until": valid_until,
+            "confidence": "0.70",
+            "thesis": "The recorded provider selects this exact action.",
+            "invalidation": "Re-evaluate when market or account facts change.",
+            "risks": ["The market can move against the position."]
+        });
+        match action {
+            "OPEN_LONG" => {
+                value["order"] = json!({
+                    "type": "LIMIT",
+                    "quantity": "0.10",
+                    "limit_price": "210.00",
+                    "time_in_force": "GTC",
+                    "expires_at": valid_until,
+                    "max_slippage_quote": "1.00"
+                });
+                value["protective_stop"] = json!({
+                    "trigger_price": "200.00",
+                    "order_type": "MARKET"
+                });
+                value["take_profits"] = json!([{"price": "230.00", "quantity": "0.10"}]);
+                value["declared_max_loss_quote"] = json!(declared_max_loss_quote);
+                value["review"] = json!({
+                    "next_review_at": now + 8_000,
+                    "max_holding_until": now + 18_000
+                });
+            }
+            "EXIT" => {
+                value["target_trade_plan_id"] = json!(
+                    target_trade_plan_id
+                        .expect("EXIT requires a target")
+                        .to_string()
+                );
+                value["order"] = json!({
+                    "type": "MARKET",
+                    "quantity": "0.10",
+                    "time_in_force": "IOC",
+                    "expires_at": valid_until,
+                    "max_slippage_quote": "1.00"
+                });
+                value["review"] = json!({
+                    "next_review_at": now + 8_000,
+                    "max_holding_until": now + 18_000
+                });
+            }
+            "NO_TRADE" => {}
+            _ => panic!("unsupported scripted runtime action"),
+        }
+        let plan =
+            AiTradingPlan::from_json(&value.to_string()).expect("scripted plan should be valid");
+        let response = AiRawResponse::new(
+            AiProviderResponseId::from_str(&uuid_text(sequence + 50_000))
+                .expect("response ID is valid"),
+            context.context_id(),
+            "recorded-stub",
+            "deterministic",
+            now + 1_000,
+            plan.to_json(),
+        )
+        .expect("scripted response should be valid");
+        RuntimeAiGeneration::recorded(response, plan)
+    }
+
+    fn paper_runtime_fact_bundle(
+        sequence: u128,
+        symbol: &str,
+        base_asset: &str,
+        managed: bool,
+        stale: bool,
+        account_changed_after_context: bool,
+    ) -> (PaperRuntimeFacts, HistoricalValidationFacts) {
+        let end_at = u64::try_from(AI_END_AT).expect("timestamp fits u64");
+        let offset = if stale {
+            69_000
+        } else if managed {
+            9_000
+        } else {
+            0
+        };
+        let as_of = end_at + 1_000 + offset;
+        let instrument = runtime_instrument(symbol);
+        let rules = runtime_rules(symbol, base_asset);
+        let primary = runtime_candles(&instrument, MarketTimeframe::FifteenMinutes, end_at);
+        let confirmation = runtime_candles(&instrument, MarketTimeframe::OneHour, end_at);
+        let book = TopOfBook::new(
+            instrument.clone(),
+            as_of - 500,
+            as_of - 100,
+            decimal("218.9"),
+            decimal("10"),
+            decimal("219.1"),
+            decimal("12"),
+        )
+        .expect("runtime book should be valid");
+        let features = MarketFeatureEngine::compute(
+            &primary,
+            &confirmation,
+            &book,
+            as_of,
+            MarketDataSource::WebSocketLive,
+        )
+        .expect("runtime market features should be valid");
+        let rules_snapshot = InstrumentRulesSnapshot::new(
+            vec![rules.clone()],
+            ExchangeServerTime::new(end_at / 1_000, end_at * 1_000_000, end_at)
+                .expect("runtime server time should be valid"),
+            end_at,
+            end_at + 60_000,
+            RulesHash::from_sha256([9; 32]),
+        )
+        .expect("runtime rules snapshot should be valid");
+        let base_quantity = if managed { "0.10" } else { "0.50" };
+        let managed_quantity = if managed { "0.10" } else { "0" };
+        let portfolio = PortfolioReconciler::reconcile(
+            vec![
+                ExchangeAssetBalance::new(asset(base_asset), decimal(base_quantity), decimal("0"))
+                    .expect("runtime base exchange balance should be valid"),
+                ExchangeAssetBalance::new(asset("USDT"), decimal("1000"), decimal("0"))
+                    .expect("runtime quote exchange balance should be valid"),
+            ],
+            vec![
+                LocalAssetBalance::new(
+                    asset(base_asset),
+                    decimal(base_quantity),
+                    decimal(managed_quantity),
+                )
+                .expect("runtime base local balance should be valid"),
+                LocalAssetBalance::new(asset("USDT"), decimal("1000"), decimal("0"))
+                    .expect("runtime quote local balance should be valid"),
+            ],
+            as_of - 100,
+        )
+        .expect("runtime portfolio should be valid");
+        let managed_positions = if managed {
+            vec![
+                ironpilot_domain::ManagedPosition::new(
+                    instrument.clone(),
+                    asset(base_asset),
+                    decimal("0.10"),
+                )
+                .expect("runtime managed position should be valid"),
+            ]
+        } else {
+            Vec::new()
+        };
+        let context_orders = if account_changed_after_context {
+            vec![
+                AccountOrderFact::new(
+                    format!("runtime-exchange-{sequence}"),
+                    Some(format!("runtime-link-{sequence}")),
+                    instrument.clone(),
+                    AccountOrderSide::Buy,
+                    AiOrderType::Limit,
+                    Some(decimal("210")),
+                    decimal("0.10"),
+                    decimal("0"),
+                    AccountOrderStatus::New,
+                    as_of - 100,
+                )
+                .expect("runtime account order should be valid"),
+            ]
+        } else {
+            Vec::new()
+        };
+        let validation_managed = if managed {
+            vec![
+                ironpilot_application::ManagedPositionExecutionFact::new(
+                    trade_plan_id(800),
+                    managed_positions[0].clone(),
+                    decimal("210"),
+                    decimal("200"),
+                )
+                .expect("runtime validation managed position should be valid"),
+            ]
+        } else {
+            Vec::new()
+        };
+        let active_plans = if managed {
+            vec![ironpilot_application::ActiveTradePlanFact::new(
+                trade_plan_id(800),
+                instrument.clone(),
+                TradePlanState::Active,
+            )]
+        } else {
+            Vec::new()
+        };
+        let price_limits = SpotOrderPriceLimits::new(
+            instrument.clone(),
+            decimal("220"),
+            decimal("190"),
+            as_of + 2_000,
+        )
+        .expect("runtime price limits should be valid");
+        let authorization =
+            ExecutionAuthorization::new(ExecutionMode::Paper, true, vec![instrument.clone()])
+                .expect("runtime authorization should be valid");
+        let policy =
+            ExecutionValidationPolicy::new(decimal("0"), 5_000, 5_000).expect("policy is valid");
+        let validation = HistoricalValidationFacts::new(
+            rules_snapshot.clone(),
+            portfolio.clone(),
+            validation_managed,
+            if account_changed_after_context {
+                Vec::new()
+            } else {
+                context_orders.clone()
+            },
+            active_plans,
+            book.clone(),
+            price_limits,
+            decimal("25"),
+            authorization,
+            policy,
+            as_of + 3_000,
+        );
+        let provider_state = if managed {
+            let original_plan = runtime_original_open_plan(sequence, &instrument, as_of);
+            AiTradingRuntimeState::new(vec![
+                AiRuntimeTradePlanFact::new(
+                    trade_plan_id(800),
+                    original_plan,
+                    json!({
+                        "status": "FILLED",
+                        "filled_quantity": "0.10",
+                        "average_price": "210.00",
+                        "last_fill_at": as_of - 1_000
+                    }),
+                )
+                .expect("runtime active plan fact should be valid"),
+            ])
+            .expect("runtime provider state should be valid")
+        } else {
+            AiTradingRuntimeState::empty()
+        };
+        (
+            PaperRuntimeFacts::new(
+                AiDecisionContextId::from_str(&uuid_text(sequence + 60_000))
+                    .expect("runtime context ID should be valid"),
+                as_of,
+                primary,
+                confirmation,
+                book,
+                features,
+                rules_snapshot,
+                portfolio,
+                managed_positions,
+                context_orders,
+                decimal("25"),
+                rules,
+                provider_state,
+            ),
+            validation,
+        )
+    }
+
+    fn runtime_original_open_plan(
+        sequence: u128,
+        instrument: &InstrumentId,
+        as_of: u64,
+    ) -> AiTradingPlan {
+        let value = json!({
+            "schema_version": "3.0",
+            "plan_id": uuid_text(sequence + 70_000),
+            "context_id": uuid_text(sequence + 71_000),
+            "instrument_id": instrument.to_string(),
+            "action": "OPEN_LONG",
+            "valid_until": as_of + 20_000,
+            "confidence": "0.70",
+            "thesis": "The original AI plan opened this managed position.",
+            "invalidation": "Exit when the original thesis no longer holds.",
+            "risks": ["The market can move against the position."],
+            "order": {
+                "type": "LIMIT",
+                "quantity": "0.10",
+                "limit_price": "210.00",
+                "time_in_force": "GTC",
+                "expires_at": as_of + 20_000,
+                "max_slippage_quote": "1.00"
+            },
+            "protective_stop": {
+                "trigger_price": "200.00",
+                "order_type": "MARKET"
+            },
+            "take_profits": [{"price": "230.00", "quantity": "0.10"}],
+            "declared_max_loss_quote": "2.00",
+            "review": {
+                "next_review_at": as_of + 8_000,
+                "max_holding_until": as_of + 18_000
+            }
+        });
+        AiTradingPlan::from_json(&value.to_string())
+            .expect("runtime original OPEN_LONG plan should be valid")
+    }
+
+    fn paper_runtime_attempt(
+        sequence: u128,
+        trade_plan_id: TradePlanId,
+        validation: HistoricalValidationFacts,
+        open_long_shape: bool,
+        time_offset: u64,
+    ) -> PaperRuntimeActionAttempt {
+        let id_base = sequence
+            .checked_mul(10)
+            .expect("runtime test ID base should not overflow");
+        let runtime_order_ids = |role: u128| {
+            ExecutionOrderIds::new(
+                OrderIntentId::from_str(&uuid_text(id_base + 90_000 + role))
+                    .expect("runtime order-intent ID should be valid"),
+                OrderId::from_str(&uuid_text(id_base + 100_000 + role))
+                    .expect("runtime order ID should be valid"),
+            )
+        };
+        let ids = if open_long_shape {
+            ExecutionOrderIdSet::new(
+                Some(runtime_order_ids(0)),
+                Some(runtime_order_ids(1)),
+                vec![runtime_order_ids(2)],
+            )
+        } else {
+            ExecutionOrderIdSet::new(Some(runtime_order_ids(0)), None, Vec::new())
+        }
+        .expect("runtime execution IDs should be valid");
+        let end_at = u64::try_from(AI_END_AT).expect("timestamp fits u64");
+        PaperRuntimeActionAttempt::new(
+            trade_plan_id,
+            TradePlanActionId::from_str(&uuid_text(sequence + 70_000))
+                .expect("runtime action ID should be valid"),
+            ids,
+            validation,
+            end_at + 3_000 + time_offset,
+            end_at + 5_000 + time_offset,
+        )
+    }
+
+    fn paper_runtime_observation(
+        sequence: u128,
+        symbol: &str,
+        time_offset: u64,
+        traded_low: &str,
+        traded_high: &str,
+        liquidity: &str,
+    ) -> PaperMarketObservation {
+        let end_at = u64::try_from(AI_END_AT).expect("timestamp fits u64");
+        PaperMarketObservation::new(
+            snapshot_id(sequence),
+            runtime_instrument(symbol),
+            end_at + time_offset,
+            end_at + time_offset + 1,
+            decimal("218"),
+            decimal("220"),
+            decimal(traded_low),
+            decimal(traded_high),
+            decimal(liquidity),
+        )
+        .expect("runtime observation should be valid")
+    }
+
+    fn runtime_instrument(symbol: &str) -> InstrumentId {
+        InstrumentId::from_str(&format!("bybit:spot:{symbol}"))
+            .expect("runtime instrument should be valid")
+    }
+
+    fn runtime_rules(symbol: &str, base_asset: &str) -> SpotInstrumentRules {
+        validated_spot_instrument_rules(
+            runtime_instrument(symbol),
+            asset(base_asset),
+            asset("USDT"),
+            InstrumentTradingStatus::Trading,
+            decimal("0.01"),
+            decimal("0.00000001"),
+            decimal("0.00000001"),
+            decimal("5"),
+            decimal("10"),
+            decimal("10"),
+            decimal("10"),
+            decimal("0.01"),
+            decimal("0.01"),
+        )
+        .expect("runtime instrument rules should be valid")
+    }
+
+    fn runtime_candles(
+        instrument: &InstrumentId,
+        timeframe: MarketTimeframe,
+        end_at: u64,
+    ) -> Vec<ClosedCandle> {
+        let duration = timeframe.duration_millis();
+        let first_open =
+            end_at - duration * u64::try_from(FEATURE_CANDLE_WINDOW).expect("window fits u64");
+        (0..FEATURE_CANDLE_WINDOW)
+            .map(|index| {
+                let price = 100 + i64::try_from(index).expect("index fits i64");
+                ClosedCandle::new(
+                    instrument.clone(),
+                    timeframe,
+                    first_open + duration * u64::try_from(index).expect("index fits u64"),
+                    decimal(&price.to_string()),
+                    decimal(&(price + 1).to_string()),
+                    decimal(&(price - 1).to_string()),
+                    decimal(&price.to_string()),
+                    decimal("10"),
+                    decimal(&(price * 10).to_string()),
+                    true,
+                )
+                .expect("runtime candle should be valid")
+            })
+            .collect()
+    }
+
+    fn cycle_id(sequence: u128) -> PaperRuntimeCycleId {
+        PaperRuntimeCycleId::new(
+            uuid::Uuid::parse_str(&uuid_text(sequence + 80_000))
+                .expect("runtime cycle UUID should be valid"),
+        )
+        .expect("runtime cycle ID should be valid")
+    }
+
+    async fn assert_runtime_trace_complete(
+        repository: &SqliteRepository,
+        cycle_id: PaperRuntimeCycleId,
+        expect_execution: bool,
+    ) {
+        let events: Vec<(i64, String, String)> = sqlx::query_as(
+            "
+            SELECT sequence, event_type, payload_json
+            FROM paper_runtime_events
+            WHERE cycle_id = ?
+            ORDER BY sequence
+            ",
+        )
+        .bind(cycle_id.to_string())
+        .fetch_all(repository.pool())
+        .await
+        .expect("runtime trace should be readable");
+        assert!(!events.is_empty());
+        assert_eq!(events[0].0, 0);
+        assert_eq!(
+            events.last().map(|event| event.1.as_str()),
+            Some("COMPLETED")
+        );
+        if let Some(context_event) = events
+            .iter()
+            .find(|event| event.1.as_str() == "CONTEXT_BUILT")
+        {
+            let payload: serde_json::Value = serde_json::from_str(&context_event.2)
+                .expect("Context event payload should be JSON");
+            assert!(payload["context_hash"].is_string());
+            assert!(payload["runtime_state_hash"].is_string());
+            assert!(
+                payload["runtime_state"]["active_trade_plans"].is_array(),
+                "trace must retain the complete provider runtime state"
+            );
+        }
+        if expect_execution {
+            for required in [
+                "CONTEXT_BUILT",
+                "AI_PLAN_RECORDED",
+                "ACCEPT",
+                "EXECUTION_SUBMITTED",
+                "COMPLETED",
+            ] {
+                assert!(
+                    events.iter().any(|event| event.1 == required),
+                    "successful runtime trace is missing {required}"
+                );
+            }
+        }
+        assert!(
+            events
+                .iter()
+                .enumerate()
+                .all(|(index, event)| event.0 == i64::try_from(index).expect("index fits i64")),
+            "runtime trace sequence must be gap-free"
+        );
     }
 
     fn execution_validation_audit(
