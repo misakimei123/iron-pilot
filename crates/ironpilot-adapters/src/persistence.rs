@@ -28,9 +28,9 @@ const TRADING_RUNTIME_LOCK: &str = "trading-runtime";
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub struct SqliteRepository {
-    pool: SqlitePool,
+    pub(crate) pool: SqlitePool,
     database_path: PathBuf,
-    write_gate: Mutex<()>,
+    pub(crate) write_gate: Mutex<()>,
 }
 
 impl SqliteRepository {
@@ -1136,7 +1136,7 @@ impl SqliteRepository {
     }
 }
 
-async fn ensure_instance_lease(
+pub(crate) async fn ensure_instance_lease(
     transaction: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     owner_id: RuntimeInstanceId,
     at: i64,
@@ -1334,7 +1334,7 @@ async fn ensure_existing_ai_ledger_matches(
     Ok(())
 }
 
-fn domain_timestamp(value: u64) -> Result<i64, StorageError> {
+pub(crate) fn domain_timestamp(value: u64) -> Result<i64, StorageError> {
     i64::try_from(value).map_err(|_| StorageError::InvalidStoredTimestamp)
 }
 
@@ -1342,7 +1342,7 @@ fn token_count(value: u64) -> Result<i64, StorageError> {
     i64::try_from(value).map_err(|_| StorageError::InvalidAiProviderEvidence)
 }
 
-async fn insert_managed_lot(
+pub(crate) async fn insert_managed_lot(
     transaction: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     fill: &PortfolioFill,
     occurred_at: i64,
@@ -1374,7 +1374,7 @@ async fn insert_managed_lot(
     Ok(())
 }
 
-async fn consume_managed_lots(
+pub(crate) async fn consume_managed_lots(
     transaction: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     fill: &PortfolioFill,
     occurred_at: i64,
@@ -1503,7 +1503,7 @@ fn portfolio_snapshot_json(snapshot: &PortfolioSnapshot) -> Value {
     })
 }
 
-fn normalized_decimal(value: DomainDecimal) -> String {
+pub(crate) fn normalized_decimal(value: DomainDecimal) -> String {
     value.as_decimal().normalize().to_string()
 }
 
@@ -1567,7 +1567,7 @@ fn connection_options(path: &Path, create: bool, read_only: bool) -> SqliteConne
     }
 }
 
-async fn insert_audit(
+pub(crate) async fn insert_audit(
     transaction: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     audit: &AuditEntry,
 ) -> Result<(), sqlx::Error> {
@@ -1980,9 +1980,11 @@ mod tests {
 
     use super::{LeaseAcquireError, PersistenceEffect, SqliteRepository, StorageError};
     use ironpilot_application::{
-        AuditEntry, ExecutionAuthorization, ExecutionMode, ExecutionValidationDecision,
-        ExecutionValidationOutcome, ExecutionValidationPolicy, ExecutionValidationRequest,
-        ExecutionValidator, OutboxMessage, SpotOrderPriceLimits, SystemStateChange, UnixMillis,
+        AuditEntry, ExecutionAuthorization, ExecutionMode, ExecutionOrderIdSet, ExecutionOrderIds,
+        ExecutionValidationDecision, ExecutionValidationOutcome, ExecutionValidationPolicy,
+        ExecutionValidationRequest, ExecutionValidator, OutboxMessage, PaperExecutionError,
+        PaperExecutionPolicy, PaperMarketObservation, SpotExecutionPort, SpotExecutionRequest,
+        SpotOrderPriceLimits, SystemStateChange, UnixMillis,
     };
     use ironpilot_domain::{
         AccountOrderFact, AccountOrderSide, AccountOrderStatus, AiDecisionContext,
@@ -1991,10 +1993,10 @@ mod tests {
         ClosedCandle, DomainDecimal, ExchangeAssetBalance, ExchangeServerTime,
         FEATURE_CANDLE_WINDOW, FillId, InstrumentId, InstrumentRulesSnapshot,
         InstrumentTradingStatus, LocalAssetBalance, ManagedLotId, MarketDataSource,
-        MarketFeatureEngine, MarketTimeframe, OrderId, OutboxMessageId, PortfolioFill,
-        PortfolioFillSide, PortfolioReconciler, ReconciliationRunId, RulesHash, RuntimeInstanceId,
-        SpotInstrumentRules, SystemState, TopOfBook, TradePlanActionId, TradePlanId,
-        validated_spot_instrument_rules,
+        MarketFeatureEngine, MarketTimeframe, OrderId, OrderIntentId, OutboxMessageId,
+        PortfolioFill, PortfolioFillSide, PortfolioReconciler, ReconciliationRunId, RulesHash,
+        RuntimeInstanceId, SnapshotId, SpotInstrumentRules, SystemState, TopOfBook,
+        TradePlanActionId, TradePlanId, validated_spot_instrument_rules,
     };
     use serde_json::json;
 
@@ -2040,6 +2042,9 @@ mod tests {
                 "materialized_trade_parameters",
                 "order_intents",
                 "outbox",
+                "paper_execution_submissions",
+                "paper_market_observations",
+                "paper_order_specs",
                 "paper_orders",
                 "reconciliation_runs",
                 "risk_decisions",
@@ -2259,6 +2264,254 @@ mod tests {
         assert_eq!(plan_state, "ACCEPTED");
         assert_eq!(action_state, "VALIDATION_ACCEPTED");
         assert_eq!(order_intents, 0, "P3-13 must never create an order intent");
+
+        fixture.close().await;
+    }
+
+    #[tokio::test]
+    async fn paper_execution_is_exact_partial_and_idempotent_without_decision_bar_reuse() {
+        let fixture = Fixture::new().await;
+        let owner = runtime_id(717);
+        fixture
+            .repository
+            .acquire_instance_lease(
+                owner,
+                timestamp(AI_END_AT),
+                std::time::Duration::from_secs(60),
+            )
+            .await
+            .expect("runtime lease should be acquired");
+        let entry = ai_ledger_entry(717, "OPEN_LONG", trade_plan_id(717));
+        fixture
+            .repository
+            .persist_ai_trade_plan_ledger(owner, &entry, &ai_ledger_audit(&entry, 717))
+            .await
+            .expect("OPEN_LONG ledger should persist");
+        let decision = accepted_execution_validation(&entry);
+        fixture
+            .repository
+            .persist_execution_validation(
+                owner,
+                &decision,
+                &execution_validation_audit(&decision, 717),
+            )
+            .await
+            .expect("validation should persist");
+
+        let ids = ExecutionOrderIdSet::new(
+            Some(ExecutionOrderIds::new(order_intent_id(717), order_id(717))),
+            Some(ExecutionOrderIds::new(order_intent_id(718), order_id(718))),
+            vec![ExecutionOrderIds::new(order_intent_id(719), order_id(719))],
+        )
+        .expect("execution IDs should be valid");
+        let end_at = u64::try_from(AI_END_AT).expect("timestamp fits u64");
+        let request = SpotExecutionRequest::from_accepted_plan(
+            entry.context(),
+            &decision,
+            entry.plan(),
+            ids,
+            end_at + 5_000,
+        )
+        .expect("accepted plan should produce an execution request");
+        let policy =
+            PaperExecutionPolicy::new(decimal("0.001"), decimal("0.002"), decimal("0.001"))
+                .expect("paper policy should be valid");
+        let port = crate::SqlitePaperExecutionPort::new(&fixture.repository, owner, policy);
+        assert_eq!(
+            port.submit(&request)
+                .await
+                .expect("paper submission should succeed")
+                .effect(),
+            ironpilot_application::ExecutionEffect::Applied
+        );
+        assert_eq!(
+            port.submit(&request)
+                .await
+                .expect("duplicate paper submission should succeed")
+                .effect(),
+            ironpilot_application::ExecutionEffect::DuplicateNoEffect
+        );
+
+        let reused = PaperMarketObservation::new(
+            snapshot_id(717),
+            instrument(),
+            entry.context().as_of_unix_millis(),
+            end_at + 5_001,
+            decimal("209.9"),
+            decimal("210.1"),
+            decimal("209"),
+            decimal("211"),
+            decimal("0.04"),
+        )
+        .expect("reused observation fixture should be structurally valid");
+        assert!(matches!(
+            port.process_observation(&reused, &rules()).await,
+            Err(crate::PaperExecutionAdapterError::Paper(
+                PaperExecutionError::DecisionBarReuse
+            ))
+        ));
+        let observations: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM paper_market_observations")
+                .fetch_one(fixture.repository.pool())
+                .await
+                .expect("observation count should be readable");
+        assert_eq!(observations, 0, "reused fact must roll back atomically");
+
+        let first = PaperMarketObservation::new(
+            snapshot_id(718),
+            instrument(),
+            end_at + 6_000,
+            end_at + 6_001,
+            decimal("209.9"),
+            decimal("210.1"),
+            decimal("209"),
+            decimal("211"),
+            decimal("0.04"),
+        )
+        .expect("first observation should be valid");
+        let first_report = port
+            .process_observation(&first, &rules())
+            .await
+            .expect("partial paper fill should persist");
+        assert_eq!(first_report.fill_ids().len(), 1);
+        assert_eq!(
+            port.process_observation(&first, &rules())
+                .await
+                .expect("duplicate observation should be idempotent")
+                .effect(),
+            PersistenceEffect::DuplicateNoEffect
+        );
+        let partial: (String, String) = sqlx::query_as(
+            "
+            SELECT orders.state, specs.filled_quantity
+            FROM paper_orders AS orders
+            JOIN paper_order_specs AS specs ON specs.order_id = orders.order_id
+            WHERE orders.order_id = ?
+            ",
+        )
+        .bind(order_id(717).to_string())
+        .fetch_one(fixture.repository.pool())
+        .await
+        .expect("partial entry should be readable");
+        assert_eq!(partial, ("PARTIALLY_FILLED".to_owned(), "0.04".to_owned()));
+
+        let second = PaperMarketObservation::new(
+            snapshot_id(719),
+            instrument(),
+            end_at + 7_000,
+            end_at + 7_001,
+            decimal("209.9"),
+            decimal("210.1"),
+            decimal("209"),
+            decimal("211"),
+            decimal("0.06"),
+        )
+        .expect("second observation should be valid");
+        port.process_observation(&second, &rules())
+            .await
+            .expect("remaining paper fill should persist");
+        let (plan_state, entry_state, stop_state, take_profit_state): (
+            String,
+            String,
+            String,
+            String,
+        ) = sqlx::query_as(
+            "
+            SELECT
+                plans.state,
+                entry_order.state,
+                stop_order.state,
+                take_profit_order.state
+            FROM trade_plans AS plans
+            JOIN paper_orders AS entry_order ON entry_order.order_id = ?
+            JOIN paper_orders AS stop_order ON stop_order.order_id = ?
+            JOIN paper_orders AS take_profit_order ON take_profit_order.order_id = ?
+            WHERE plans.trade_plan_id = ?
+            ",
+        )
+        .bind(order_id(717).to_string())
+        .bind(order_id(718).to_string())
+        .bind(order_id(719).to_string())
+        .bind(entry.trade_plan_id().to_string())
+        .fetch_one(fixture.repository.pool())
+        .await
+        .expect("paper execution states should be readable");
+        assert_eq!(plan_state, "ACTIVE");
+        assert_eq!(entry_state, "FILLED");
+        assert_eq!(stop_state, "ACTIVE");
+        assert_eq!(take_profit_state, "ACTIVE");
+        assert_eq!(
+            fixture
+                .repository
+                .managed_position(&instrument(), asset("BTC"))
+                .await
+                .expect("managed position should be readable")
+                .quantity(),
+            decimal("0.10")
+        );
+        let stored_order_payload: String =
+            sqlx::query_scalar("SELECT payload_json FROM paper_orders WHERE order_id = ?")
+                .bind(order_id(717).to_string())
+                .fetch_one(fixture.repository.pool())
+                .await
+                .expect("stored order payload should be readable");
+        assert_eq!(stored_order_payload, request.orders()[0].payload_json());
+
+        let stop_trigger = PaperMarketObservation::new(
+            snapshot_id(720),
+            instrument(),
+            end_at + 8_000,
+            end_at + 8_001,
+            decimal("199"),
+            decimal("199.2"),
+            decimal("198"),
+            decimal("201"),
+            decimal("0.10"),
+        )
+        .expect("stop observation should be valid");
+        let stop_report = port
+            .process_observation(&stop_trigger, &rules())
+            .await
+            .expect("protective stop should persist");
+        assert_eq!(stop_report.fill_ids().len(), 1);
+        let (closed_plan_state, stop_order_state, cancelled_take_profit): (String, String, String) =
+            sqlx::query_as(
+                "
+            SELECT plans.state, stop_order.state, take_profit_order.state
+            FROM trade_plans AS plans
+            JOIN paper_orders AS stop_order ON stop_order.order_id = ?
+            JOIN paper_orders AS take_profit_order ON take_profit_order.order_id = ?
+            WHERE plans.trade_plan_id = ?
+            ",
+            )
+            .bind(order_id(718).to_string())
+            .bind(order_id(719).to_string())
+            .bind(entry.trade_plan_id().to_string())
+            .fetch_one(fixture.repository.pool())
+            .await
+            .expect("protective close states should be readable");
+        assert_eq!(closed_plan_state, "CLOSED");
+        assert_eq!(stop_order_state, "FILLED");
+        assert_eq!(cancelled_take_profit, "CANCELLED");
+        assert_eq!(
+            fixture
+                .repository
+                .managed_position(&instrument(), asset("BTC"))
+                .await
+                .expect("closed managed position should be readable")
+                .quantity(),
+            DomainDecimal::ZERO
+        );
+        let stop_fill_payload: String =
+            sqlx::query_scalar("SELECT payload_json FROM fills WHERE fill_id = ?")
+                .bind(stop_report.fill_ids()[0].to_string())
+                .fetch_one(fixture.repository.pool())
+                .await
+                .expect("stop fill payload should be readable");
+        let stop_fill_payload: serde_json::Value =
+            serde_json::from_str(&stop_fill_payload).expect("stop fill payload should be JSON");
+        assert_eq!(stop_fill_payload["execution_price"], "199");
+        assert_eq!(stop_fill_payload["fee_quote"], "0.0398");
 
         fixture.close().await;
     }
@@ -2973,6 +3226,14 @@ mod tests {
 
     fn order_id(value: u128) -> OrderId {
         OrderId::from_str(&uuid_text(value + 300)).expect("order ID should be valid")
+    }
+
+    fn order_intent_id(value: u128) -> OrderIntentId {
+        OrderIntentId::from_str(&uuid_text(value + 350)).expect("order intent ID should be valid")
+    }
+
+    fn snapshot_id(value: u128) -> SnapshotId {
+        SnapshotId::from_str(&uuid_text(value + 375)).expect("snapshot ID should be valid")
     }
 
     fn trade_plan_id(value: u128) -> TradePlanId {

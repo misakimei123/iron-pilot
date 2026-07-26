@@ -9,6 +9,7 @@ mod bybit_public;
 mod bybit_public_websocket;
 mod config;
 mod deepseek;
+mod paper_execution;
 mod persistence;
 mod resources;
 
@@ -34,6 +35,9 @@ pub use deepseek::{
     DeepSeekPricing, DeepSeekProviderConfig, DeepSeekProviderError, DeepSeekProviderErrorKind,
     DeepSeekUsage, MAX_DEEPSEEK_OUTPUT_TOKENS, MAX_DEEPSEEK_REQUEST_TIMEOUT,
     MAX_DEEPSEEK_RESPONSE_BYTES,
+};
+pub use paper_execution::{
+    PaperExecutionAdapterError, PaperExecutionReport, SqlitePaperExecutionPort,
 };
 pub use persistence::{
     AiTradePlanTraceRow, AuditRow, ExecutionValidationRow, InstanceLease, LeaseAcquireError,

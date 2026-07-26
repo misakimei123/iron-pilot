@@ -1,17 +1,19 @@
 use core::str::FromStr;
 
 use ironpilot_application::{
-    ExecutionAuthorization, ExecutionMode, ExecutionValidationOutcome, ExecutionValidationPolicy,
+    ExecutionAuthorization, ExecutionMode, ExecutionOrderIdSet, ExecutionOrderIds,
+    ExecutionOrderRole, ExecutionValidationOutcome, ExecutionValidationPolicy,
     ExecutionValidationRejection, ExecutionValidationRequest, ExecutionValidator,
-    SpotOrderPriceLimits,
+    PaperExecutionError, PaperExecutionPolicy, PaperMarketObservation, PaperMatchingEngine,
+    PaperOpenOrder, PaperOrderEvaluation, SpotExecutionRequest, SpotOrderPriceLimits,
 };
 use ironpilot_domain::{
     AccountOrderFact, AccountOrderSide, AccountOrderStatus, AiDecisionContext, AiDecisionContextId,
     AiOrderType, AiTradingPlan, AssetCode, ClosedCandle, DomainDecimal, ExchangeAssetBalance,
     ExchangeServerTime, FEATURE_CANDLE_WINDOW, InstrumentId, InstrumentRulesSnapshot,
     InstrumentTradingStatus, LocalAssetBalance, MarketDataSource, MarketFeatureEngine,
-    MarketTimeframe, PortfolioReconciler, PortfolioSnapshot, RulesHash, TopOfBook,
-    TradePlanActionId, TradePlanId, validated_spot_instrument_rules,
+    MarketTimeframe, OrderId, OrderIntentId, PortfolioReconciler, PortfolioSnapshot, RulesHash,
+    SnapshotId, TopOfBook, TradePlanActionId, TradePlanId, validated_spot_instrument_rules,
 };
 use serde_json::{Value, json};
 
@@ -438,4 +440,185 @@ fn a_conflicting_exchange_order_rejects_the_whole_plan() {
             .rejections()
             .contains(&ExecutionValidationRejection::ConflictingOrder)
     );
+}
+
+fn execution_ids() -> ExecutionOrderIdSet {
+    ExecutionOrderIdSet::new(
+        Some(ExecutionOrderIds::new(
+            stable_id::<OrderIntentId>(100),
+            stable_id::<OrderId>(101),
+        )),
+        Some(ExecutionOrderIds::new(
+            stable_id::<OrderIntentId>(102),
+            stable_id::<OrderId>(103),
+        )),
+        vec![ExecutionOrderIds::new(
+            stable_id::<OrderIntentId>(104),
+            stable_id::<OrderId>(105),
+        )],
+    )
+    .expect("execution IDs must be valid")
+}
+
+#[test]
+fn execution_request_preserves_every_ai_order_and_protection_field() {
+    let fixture = OpenFixture::new("25");
+    let decision = fixture.validate(&fixture.plan, VALIDATED_AT);
+    let request = SpotExecutionRequest::from_accepted_plan(
+        &fixture.context,
+        &decision,
+        &fixture.plan,
+        execution_ids(),
+        VALIDATED_AT + 1,
+    )
+    .expect("accepted plan must create an execution request");
+
+    assert_eq!(request.orders().len(), 3);
+    let entry = &request.orders()[0];
+    assert_eq!(entry.role(), ExecutionOrderRole::Entry);
+    assert_eq!(entry.order_type(), AiOrderType::Limit);
+    assert_eq!(entry.quantity(), Some(decimal("0.10")));
+    assert_eq!(entry.limit_price(), Some(decimal("210.00")));
+    assert_eq!(
+        entry.time_in_force(),
+        Some(ironpilot_domain::AiTimeInForce::Gtc)
+    );
+    assert_eq!(entry.max_slippage_quote(), decimal("1.00"));
+    let stop = &request.orders()[1];
+    assert_eq!(stop.role(), ExecutionOrderRole::ProtectiveStop);
+    assert_eq!(stop.trigger_price(), Some(decimal("200.00")));
+    assert_eq!(stop.quantity(), None);
+    let target = &request.orders()[2];
+    assert_eq!(target.role(), ExecutionOrderRole::TakeProfit { index: 0 });
+    assert_eq!(target.limit_price(), Some(decimal("230.00")));
+    assert_eq!(target.quantity(), Some(decimal("0.10")));
+    assert_eq!(request.source_plan_json(), fixture.plan.to_json());
+
+    let duplicate = SpotExecutionRequest::from_accepted_plan(
+        &fixture.context,
+        &decision,
+        &fixture.plan,
+        execution_ids(),
+        VALIDATED_AT + 1,
+    )
+    .expect("same request must remain reproducible");
+    assert_eq!(request.request_hash(), duplicate.request_hash());
+    assert_eq!(request.payload_json(), duplicate.payload_json());
+}
+
+#[test]
+fn paper_limit_matching_is_partial_fee_aware_and_rejects_decision_bar_reuse() {
+    let fixture = OpenFixture::new("25");
+    let decision = fixture.validate(&fixture.plan, VALIDATED_AT);
+    let request = SpotExecutionRequest::from_accepted_plan(
+        &fixture.context,
+        &decision,
+        &fixture.plan,
+        execution_ids(),
+        VALIDATED_AT + 1,
+    )
+    .expect("accepted plan must create an execution request");
+    let order = PaperOpenOrder::new(
+        request.orders()[0].clone(),
+        instrument(),
+        request.context_as_of_unix_millis(),
+        request.created_at_unix_millis(),
+        decimal("0.10"),
+    )
+    .expect("paper order must be valid");
+    let policy = PaperExecutionPolicy::new(decimal("0.001"), decimal("0.002"), decimal("0.001"))
+        .expect("paper policy must be valid");
+    let observation = PaperMarketObservation::new(
+        stable_id::<SnapshotId>(200),
+        instrument(),
+        AS_OF + 1,
+        VALIDATED_AT + 2,
+        decimal("209.90"),
+        decimal("210.10"),
+        decimal("209.00"),
+        decimal("211.00"),
+        decimal("0.04"),
+    )
+    .expect("observation must be valid");
+    let PaperOrderEvaluation::Fill(fill) =
+        PaperMatchingEngine::evaluate(&order, &observation, decimal("0.04"), policy)
+            .expect("matching must succeed")
+    else {
+        panic!("limit order should partially fill");
+    };
+    assert_eq!(fill.base_quantity(), decimal("0.04"));
+    assert_eq!(fill.execution_price(), decimal("210.00"));
+    assert_eq!(fill.quote_quantity(), decimal("8.4000"));
+    assert_eq!(fill.fee_quote(), decimal("0.0084000"));
+
+    let reused = PaperMarketObservation::new(
+        stable_id::<SnapshotId>(201),
+        instrument(),
+        AS_OF,
+        VALIDATED_AT + 2,
+        decimal("209.90"),
+        decimal("210.10"),
+        decimal("209.00"),
+        decimal("211.00"),
+        decimal("0.04"),
+    )
+    .expect("observation shape must be valid");
+    assert_eq!(
+        PaperMatchingEngine::evaluate(&order, &reused, decimal("0.04"), policy),
+        Err(PaperExecutionError::DecisionBarReuse)
+    );
+}
+
+#[test]
+fn paper_market_matching_applies_bounded_slippage_and_taker_fee() {
+    let fixture = OpenFixture::new("25");
+    let market_plan = plan_with(fixture.context.context_id(), |value| {
+        value["order"]["type"] = json!("MARKET");
+        value["order"]["time_in_force"] = json!("IOC");
+        value["order"]
+            .as_object_mut()
+            .expect("order must be an object")
+            .remove("limit_price");
+    });
+    let decision = fixture.validate(&market_plan, VALIDATED_AT);
+    assert_eq!(decision.outcome(), ExecutionValidationOutcome::Accept);
+    let request = SpotExecutionRequest::from_accepted_plan(
+        &fixture.context,
+        &decision,
+        &market_plan,
+        execution_ids(),
+        VALIDATED_AT + 1,
+    )
+    .expect("market request must be valid");
+    let order = PaperOpenOrder::new(
+        request.orders()[0].clone(),
+        instrument(),
+        request.context_as_of_unix_millis(),
+        request.created_at_unix_millis(),
+        decimal("0.10"),
+    )
+    .expect("paper order must be valid");
+    let observation = PaperMarketObservation::new(
+        stable_id::<SnapshotId>(202),
+        instrument(),
+        AS_OF + 1,
+        VALIDATED_AT + 2,
+        decimal("209.90"),
+        decimal("210.10"),
+        decimal("205"),
+        decimal("215"),
+        decimal("1"),
+    )
+    .expect("observation must be valid");
+    let policy = PaperExecutionPolicy::new(decimal("0.001"), decimal("0.001"), decimal("0.001"))
+        .expect("paper policy must be valid");
+    let PaperOrderEvaluation::Fill(fill) =
+        PaperMatchingEngine::evaluate(&order, &observation, decimal("1"), policy)
+            .expect("matching must succeed")
+    else {
+        panic!("market order should fill");
+    };
+    assert_eq!(fill.execution_price(), decimal("210.31010"));
+    assert_eq!(fill.quote_quantity(), decimal("21.0310100"));
+    assert_eq!(fill.fee_quote(), decimal("0.0210310100"));
 }

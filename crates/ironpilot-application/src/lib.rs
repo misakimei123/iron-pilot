@@ -6,6 +6,7 @@
 
 mod ai;
 mod config;
+mod execution;
 mod execution_validation;
 mod persistence;
 mod runtime;
@@ -19,6 +20,14 @@ pub use config::{
     CONFIG_SCHEMA_VERSION_V2, ConfigValidationError, DeploymentEnvironment, EnvironmentFingerprint,
     ExecutionMode, LlmLimits, MarketLimits, PermissionConfig, QueueLimits, RuntimeConfig,
     RuntimeLimits, StartupIdentity, StorageLimits, ValidatedRuntimeConfig, VersionConfig,
+};
+pub use execution::{
+    ExecutionCommandKind, ExecutionEffect, ExecutionFuture, ExecutionOrderIdSet, ExecutionOrderIds,
+    ExecutionOrderRole, ExecutionReceipt, ExecutionVenue, MAX_EXECUTION_ORDERS_PER_ACTION,
+    PAPER_MATCHING_ENGINE_VERSION_V1, PaperExecutionError, PaperExecutionPolicy,
+    PaperMarketObservation, PaperMatch, PaperMatchingEngine, PaperOpenOrder, PaperOrderEvaluation,
+    PlannedSpotOrder, SPOT_EXECUTION_SCHEMA_VERSION_V1, SpotExecutionPort, SpotExecutionRequest,
+    SpotExecutionRequestError, SpotExecutionRequestHash,
 };
 pub use execution_validation::{
     ActiveTradePlanFact, EXECUTION_VALIDATOR_VERSION_V1, ExecutionAuthorization,
