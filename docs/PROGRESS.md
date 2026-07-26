@@ -21,12 +21,12 @@
 
 - Current phase: Phase E — Parallel Hardening
 - In progress:
-  - P4-01
-- Ready:
   - None
+- Ready:
+  - P4-02A
 - Blocked:
   - P3-11
-- Next recommended task: complete P4-01 while P3-11 waits for an operator-controlled 30-day Paper environment
+- Next recommended task: request explicit Testnet write authorization before starting P4-02A; P3-11 still waits for an operator-controlled 30-day Paper environment
 
 ## Task Status
 
@@ -61,8 +61,8 @@
 | `P3-VS` | `DONE` | 2026-07-26 | 2026-07-26 | `919d77b0d67573a0a60729bae12fbf2f16ac3d72` | Repository evidence matrix；143 项测试；用户于 2026-07-26 明确接受证据并批准 Gate | 用户明确决定先不执行线上 DeepSeek/Telegram smoke；不授权 Testnet 写、实盘、永续或新闻能力 |
 | `P3-10B` | `DONE` | 2026-07-26 | 2026-07-26 | `d4f732624574758a8972674ac7e19b9a5eef4860` | `docs/FULL_HISTORICAL_STRATEGY_EVALUATION_V1.md`; 3 targeted tests; 146 workspace tests | Offline-only evaluation; Rule-only is not production eligible; no stage Gate approved |
 | `P3-11` | `BLOCKED` | 2026-07-26 | — | `76049ec4284e583346716ec85abd97994df46104` | `docs/LONG_RUNNING_PAPER_SAFETY_V1.md`; 5 targeted tests; 151 workspace tests | Evidence implementation complete; real 30-day Paper window, credentials, drills, and reviewer Gate remain |
-| `P4-01` | `IN_PROGRESS` | 2026-07-26 | — | — | — | P3-VS、P2-02 与 P3-01 均已完成 |
-| `P4-02A` | `PLANNED` | — | — | — | — | — |
+| `P4-01` | `DONE` | 2026-07-26 | 2026-07-26 | `3711e2761c2481363788ca6802b703fb635347ca` | `docs/BYBIT_PRIVATE_SYNC_V1.md`; 5 targeted tests; 156 workspace tests | SDK-owned private protocol; REST ack is not a fill; duplicate effect 0; disconnect/reconciliation convergence; next-Context facts; no stage Gate approved |
+| `P4-02A` | `READY` | — | — | — | P4-01 implementation and gates complete | Static dependencies are complete; execution still requires explicit Testnet write authorization |
 | `P4-02B` | `PLANNED` | — | — | — | — | — |
 | `P4-03` | `PLANNED` | — | — | — | — | — |
 | `P4-04` | `PLANNED` | — | — | — | — | — |
@@ -324,11 +324,24 @@
 - Completion boundary: these tests prove that short, discontinuous, unsafe, over-budget, mutable, or incomplete evidence cannot qualify. They are not 30 elapsed days and do not complete P3-11.
 - Status: `BLOCKED` pending the real operator-controlled 30-day Paper window, credentials, drills, qualified report, and user/authorized-reviewer Gate decision. No new stage Gate was approved.
 
+### P4-01 — Bybit Private Stream and Order Synchronization
+
+- Result: implemented `ironpilot-bybit-private-sync-v1` using typed SDK order, execution and wallet events plus typed REST order/wallet reconciliation inputs. REST place-order acknowledgement is persisted only as `ACKNOWLEDGED_NOT_FILLED` and cannot create a fill or execution.
+- Idempotency and evidence: semantic order, execution and wallet event keys make retransmission under a different SDK delivery ID a zero-effect duplicate; conflicting content fails closed. Acknowledgements, private events, executions and audit evidence are append-only, while current order/wallet projections reject stale or conflicting updates.
+- Recovery: any SDK reconnecting, disconnected or parse-error event atomically records `RECOVERY_REQUIRED`. A reconnect cannot silently restore trust. Context reads remain blocked until a complete, bounded SDK-typed REST snapshot atomically replaces current projections, records reconciliation evidence and converges to `RECONCILED`; identical snapshot replay is a no-op.
+- Next Context: one consistent SQLite read transaction returns reconciled portfolio facts, every current non-terminal Spot order and the latest private execution timestamp for the next AI Context. Missing, future or unreconciled facts fail closed.
+- SDK and resources: selected `patisson-bybit-sdk 0.2.3` after reviewing the official `bybit-api`, `bybit-client` and `rs_bybit` candidates. The version-pinned local audit overlay removes native TLS, system proxy, HTTP/2, Tokio `full` and duplicate WebSocket versions. Its sole source safety patch changes full-event-queue behavior from silent loss to awaited bounded backpressure; SDK authentication, subscription, DTO, heartbeat and finite reconnect protocol remain SDK-owned.
+- Bounds: command/event queues are 32/256, event and reconciliation batches are capped at 256, heartbeat is 20 seconds with a 10-second pong timeout, and reconnect is capped at five attempts with 500-millisecond to 8-second backoff.
+- Implementation commit: `3711e2761c2481363788ca6802b703fb635347ca`; task-start progress commit: `6cb1360`.
+- Gates: 5 targeted tests passed; the full workspace passed 156 tests with 0 failures and 1 explicitly ignored live Bybit public-WSS smoke. Formatting, strict Clippy, locked build/test/metadata, cargo-deny advisories/bans/licenses/sources, Gitleaks history plus `crates/`, `docs/` and `vendor/`, SDK reuse/no custom private wire client checks, lossless bounded queue checks, provenance comparison and `git diff --check` passed. `docs/DEVELOPMENT_PLAN.md` remained unchanged.
+- Authority boundary: no Testnet or Live exchange write was executed or authorized, and no stage Gate was approved.
+
 ## Next Action
 
-P4-01 Bybit private stream and order synchronization remains independently
-READY and is the next implementable task. P3-11 stays BLOCKED until the
-operator-controlled 30-day Paper evidence and reviewer decision exist.
+P4-02A is now dependency-ready, but its protocol smoke includes exchange writes
+and therefore cannot start without explicit Testnet write authorization.
+P3-11 stays BLOCKED until the operator-controlled 30-day Paper evidence and
+reviewer decision exist.
 
 以上内容是依据 `docs/DEVELOPMENT_PLAN.md` 静态依赖生成的进度建议，不改变任何 Task 依赖。
 
