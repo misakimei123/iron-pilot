@@ -22,11 +22,10 @@
 - Current phase: Phase C — AI-Dominant Paper
 - In progress: None
 - Ready:
-  - P3-06
   - P3-07A
   - P3-08
 - Blocked: None
-- Next recommended task: P3-06
+- Next recommended task: P3-07A
 
 ## Task Status
 
@@ -54,7 +53,7 @@
 | `P3-13` | `DONE` | 2026-07-26 | 2026-07-26 | `86203e92147acfd5671b158fd1edf546685a9347` | `ironpilot-execution-validator-v1`；完整兼容性/授权/最大亏损校验；原子 validation ledger；8 项专项持久化与领域测试；121 项全工作区测试及全部质量门禁 | 只返回 ACCEPT/REJECT，未修改 AI 方案或生成订单；未批准任何阶段 Gate |
 | `P3-05` | `DONE` | 2026-07-26 | 2026-07-26 | `e05918fc57a3b51f9b94d6d42cc1a9b05e1ab7b9` | `ironpilot-spot-execution-v1`；共享 port；精确订单映射；部分成交/费用/滑点/保护单/ManagedLot；4 项专项测试；125 项全工作区测试及全部质量门禁 | 未修改开发计划；未批准任何阶段 Gate |
 | `P3-10A` | `DONE` | 2026-07-26 | 2026-07-26 | `5f8b097220e94caed14ba74d1513410819370e14` | `ironpilot-minimal-historical-harness-v1`；确定性/前缀不变/无前视 2 项专项测试；127 项全工作区测试及全部质量门禁 | 不调用实时 LLM，不包含 Materializer/Risk Engine，不构建完整绩效平台；未批准任何阶段 Gate |
-| `P3-06` | `READY` | — | — | — | — | P3-04、P3-05 与 P3-13 完成后依赖已满足 |
+| `P3-06` | `DONE` | 2026-07-26 | 2026-07-26 | `f5a7bc061b06b1be471ab57eda740595d7f361d6` | `ironpilot-ai-paper-runtime-v1`；Runtime Prompt v2；append-only cycle trace；6 项专项测试；133 项全工作区测试及全部质量门禁 | 本地生成或改写交易参数次数为 0；主链无新闻、Materializer 或策略型 Risk Engine；未批准任何阶段 Gate |
 | `P3-07A` | `READY` | — | — | — | — | P1-05 与 P3-03 完成后依赖已满足 |
 | `P3-08` | `READY` | — | — | — | — | P3-01、P3-03 与 P3-05 完成后依赖已满足 |
 | `P3-07B` | `PLANNED` | — | — | — | — | — |
@@ -241,9 +240,18 @@ None.
 - 门禁：2 项专项测试覆盖独立数据库确定性、规范 SQLite 账本相等、累计 hash 前缀不变、maker fee/精确成交、保护止损扩展和决策事实复用零写入；全工作区 127 项测试通过、0 失败，1 项既有 Bybit 线上 WSS 只读测试保持显式忽略；`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo test --workspace --all-targets --locked`、`cargo build --workspace --all-targets --locked`、`cargo metadata --locked --no-deps`、cargo-deny 0.19.4 advisories/bans/licenses/sources、Gitleaks 51 提交历史与源码工作树扫描、共享 Validator/TradePlan/Paper 与无实时 LLM/Materializer/Risk Engine 静态断言和 `git diff --check` 全部通过；`docs/DEVELOPMENT_PLAN.md` 零差异。
 - 已知限制：本 Task 只证明最小可复现执行链，不实现完整绩效统计、优化、参数搜索、组合分析或 P3-10B Full Historical Strategy Evaluation；不授权 Testnet/Live 写入，也不批准 `P3-VS` 或任何阶段 Gate。
 
+### P3-06 — AI 主导现货 Paper Runtime
+
+- 结果：实现版本化 `ironpilot-ai-paper-runtime-v1`，以有界 cycle 运行 Facts → `AiDecisionContext` → DeepSeek/录制 provider → `AITradingPlan v3` → 不可变 AI ledger → `ExecutionValidator` → 原样 `SpotExecutionRequest` → SQLite Paper execution → 后续 AI review/exit。正常交易的 entry、quantity、stop、take-profit、slippage、expiry 和 review 参数全部来自 AI；Runtime 只创建 ID、时间戳、协议 envelope 和审计，不修复、舍入、缩量、调价或替换方案，报告固定记录 `local_parameter_mutations = 0`。
+- Provider 与复评：新增有界、哈希化的 Runtime Prompt v2，向真实 DeepSeek provider 交付活动 TradePlan ID、原始 `AITradingPlan` 和最近执行结果，使 `HOLD`、`MODIFY_PROTECTION`、`REDUCE`、`EXIT` 能精确引用管理目标；非 Runtime 的 Prompt v1 保持兼容。Provider 失败、无效方案或预算耗尽均无本地 fallback；Validation 拒绝最多触发同一 Context 的一次完整 replan。
+- 追溯与恢复：新增 append-only `paper_runtime_events`，按 cycle 保存无间隙事件序列、完整有界 provider runtime state、Context/plan/validation/execution request hash、Paper observation/fill 和终态报告，并以数据库触发器禁止更新或删除。已完成 cycle 重启返回 `DuplicateNoEffect`，不再次调用 AI 或下单；未完成 cycle 返回 `RecoveryRequired`，阻止在恢复持久化事实前开展新 AI 工作。
+- Commit：`f5a7bc061b06b1be471ab57eda740595d7f361d6`。
+- 门禁：3 项 Runtime Prompt/真实 provider request 测试与 3 项 SQLite Paper Runtime 测试覆盖活动计划目标与原始方案输入、Prompt v1 兼容、跨标的状态拒绝、多标的隔离、预算耗尽、AI 无效方案、超授权后一次 replan、陈旧数据、Context 后订单变化、持仓复评退出、部分成交、完整/未完成重启和零重复订单；全工作区 133 项测试通过、0 失败，1 项既有 Bybit 线上 WSS 只读测试保持显式忽略；`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo test --workspace --all-targets --locked`、`cargo build --workspace --all-targets --locked`、`cargo metadata --locked --no-deps`、cargo-deny 0.19.4 advisories/bans/licenses/sources、Gitleaks 53 提交历史与源码工作树扫描、AI 参数零本地改写/完整追溯/无新闻 Materializer Risk Engine 静态断言和 `git diff --check` 全部通过；`docs/DEVELOPMENT_PLAN.md` 零差异。
+- 已知限制：本 Task 运行有界 Paper decision cycle，长期调度、完整历史评估和长时间 Paper 安全分别由后续 Task 承担；确定性门禁使用录制 provider 或本地 HTTP 协议服务，不消耗真实 DeepSeek API；不授权 Testnet/Live 写入，也不批准 `P3-VS` 或任何阶段 Gate。
+
 ## Next Action
 
-Execute P3-06 next. P3-07A and P3-08 are also READY and remain independent until downstream dependencies converge.
+Execute P3-07A next. P3-08 is also READY and remains independent until downstream dependencies converge.
 
 以上内容是依据 `docs/DEVELOPMENT_PLAN.md` 静态依赖生成的进度建议，不改变任何 Task 依赖。
 
