@@ -20,12 +20,12 @@
 ## Current Focus
 
 - Current phase: Phase E — Parallel Hardening
-- In progress: P3-11 Long-running Paper Safety
+- In progress: None
 - Ready:
-  - P3-11
   - P4-01
-- Blocked: None
-- Next recommended task: establish P3-11 soak evidence and begin the non-compressible 30-day observation window; P4-01 remains independently READY
+- Blocked:
+  - P3-11
+- Next recommended task: P4-01 can proceed independently while P3-11 waits for an operator-controlled 30-day Paper environment
 
 ## Task Status
 
@@ -59,7 +59,7 @@
 | `P3-07B` | `DONE` | 2026-07-26 | 2026-07-26 | `1c68737b78669e9c4cd42c129f465e1eceaf025b` | `ironpilot-telegram-emergency-v1`；SDK chat/user 身份、UUID v4 nonce、二次确认、TTL、一次性消费与统一 Emergency Command；6 项 Telegram 专项测试；143 项全工作区测试及全部质量门禁 | 只构造授权命令，直接交易写入为 0；重启使未确认 challenge fail closed；未批准任何阶段 Gate |
 | `P3-VS` | `DONE` | 2026-07-26 | 2026-07-26 | `919d77b0d67573a0a60729bae12fbf2f16ac3d72` | Repository evidence matrix；143 项测试；用户于 2026-07-26 明确接受证据并批准 Gate | 用户明确决定先不执行线上 DeepSeek/Telegram smoke；不授权 Testnet 写、实盘、永续或新闻能力 |
 | `P3-10B` | `DONE` | 2026-07-26 | 2026-07-26 | `d4f732624574758a8972674ac7e19b9a5eef4860` | `docs/FULL_HISTORICAL_STRATEGY_EVALUATION_V1.md`; 3 targeted tests; 146 workspace tests | Offline-only evaluation; Rule-only is not production eligible; no stage Gate approved |
-| `P3-11` | `IN_PROGRESS` | 2026-07-26 | — | — | — | P3-VS 已由用户批准；最终 Gate 要求连续 30 天真实 Paper 证据 |
+| `P3-11` | `BLOCKED` | 2026-07-26 | — | `76049ec4284e583346716ec85abd97994df46104` | `docs/LONG_RUNNING_PAPER_SAFETY_V1.md`; 5 targeted tests; 151 workspace tests | Evidence implementation complete; real 30-day Paper window, credentials, drills, and reviewer Gate remain |
 | `P4-01` | `READY` | — | — | — | — | P3-VS、P2-02 与 P3-01 均已完成 |
 | `P4-02A` | `PLANNED` | — | — | — | — | — |
 | `P4-02B` | `PLANNED` | — | — | — | — | — |
@@ -71,7 +71,12 @@
 
 ## Active Blockers
 
-None.
+- Task ID: `P3-11`
+- Blocking reason: the authoritative Gate requires a real continuous 30-day Paper run. This workspace has no injected DeepSeek credential or operator-controlled continuously deployed Paper environment, and no real elapsed soak evidence exists yet. Deterministic or virtual-time tests cannot replace it.
+- Discovered: 2026-07-26
+- Related implementation: `76049ec4284e583346716ec85abd97994df46104`; `docs/LONG_RUNNING_PAPER_SAFETY_V1.md`
+- Unblock condition: inject the user-controlled Paper credential/configuration, deploy the frozen build, collect observations with no gap above five minutes for at least 30 days, execute all six required failure drills, preserve normal AI-managed-position and independent Emergency evidence, obtain a `qualified` report, and submit it to the user or authorized reviewer for the Gate decision.
+- Development-plan change required: No.
 
 未来阻塞项必须记录：
 
@@ -306,12 +311,23 @@ None.
 - Gates: 3 targeted historical-evaluation tests passed; the full workspace passed 146 tests with 0 failures and 1 explicitly ignored live Bybit public-WSS smoke. Formatting, strict Clippy, locked build/test/metadata, cargo-deny advisories/bans/licenses/sources, Gitleaks history plus `crates/` and `docs/`, boundary checks, and `git diff --check` passed. `docs/DEVELOPMENT_PLAN.md` remained unchanged.
 - Gate authority: this completion does not approve any new stage Gate.
 
+### P3-11 — Long-running Paper Safety Evidence Infrastructure
+
+- Coding result: implemented `ironpilot-paper-soak-evidence-v1` with an immutable manifest, a fixed non-compressible 30-day duration, a five-minute maximum evidence gap, deterministic qualification, stable evidence hashes, and explicit `collecting`/`disqualified`/`qualified` outcomes.
+- Safety evidence: state divergence, unmanaged sells, duplicate business effects, audit gaps, local AI-plan mutation, unanswered managed-position reviews, Emergency availability, LLM calls/tokens/exact cost/replan ceiling, queues, RSS/CPU, and bounded SQLite growth are all recorded and evaluated fail closed.
+- Failure drills: model timeout, invalid model output, market disconnect, restart, resource pressure, and Emergency independence must each prove recovery, zero unauthorized effects, zero audit gaps, zero local plan mutation, and Emergency availability without AI.
+- Persistence and recovery: migration `0009_p3_11_paper_soak_evidence.sql` adds append-only run, observation, and fault-evidence tables. Identical replay has zero effect, conflicting evidence fails closed, stored payload hashes are rechecked, and reports are reconstructed after restart.
+- Open-source reuse: no dependency or protocol implementation was added. The task reuses existing Tokio, SQLx/SQLite, sysinfo, Serde JSON, SHA-256, and exact Decimal infrastructure; project code is limited to IronPilot-specific evidence and qualification semantics.
+- Implementation commit: `76049ec4284e583346716ec85abd97994df46104`.
+- Deterministic gates: 4 application qualification tests and 1 SQLite integration test passed. The full workspace passed 151 tests with 0 failures and 1 explicitly ignored live Bybit public-WSS smoke. Formatting, strict Clippy, locked build/test/metadata, cargo-deny advisories/bans/licenses/sources, Gitleaks history plus `crates/` and `docs/`, dependency-zero-diff and protocol-boundary checks, and `git diff --check` passed. `docs/DEVELOPMENT_PLAN.md` remained unchanged.
+- Completion boundary: these tests prove that short, discontinuous, unsafe, over-budget, mutable, or incomplete evidence cannot qualify. They are not 30 elapsed days and do not complete P3-11.
+- Status: `BLOCKED` pending the real operator-controlled 30-day Paper window, credentials, drills, qualified report, and user/authorized-reviewer Gate decision. No new stage Gate was approved.
+
 ## Next Action
 
-P3-11 Long-running Paper Safety is active. Its continuous 30-day evidence
-window is non-compressible; deterministic tests or a virtual clock cannot be
-reported as completion evidence. P4-01 remains independently READY and
-untouched.
+P4-01 Bybit private stream and order synchronization remains independently
+READY and is the next implementable task. P3-11 stays BLOCKED until the
+operator-controlled 30-day Paper evidence and reviewer decision exist.
 
 以上内容是依据 `docs/DEVELOPMENT_PLAN.md` 静态依赖生成的进度建议，不改变任何 Task 依赖。
 
