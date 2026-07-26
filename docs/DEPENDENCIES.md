@@ -12,11 +12,13 @@ features are disabled; only the listed features are enabled.
 |---|---|---|---|---|---|---|---|
 | `rust_decimal` | `1.42.1` | Runtime / `ironpilot-domain` | Exact decimal values for all domain amounts | MIT | Maintained upstream | `std`; bounded CPU and 16-byte value representation | Replace with an audited fixed-scale integer type while preserving string wire encoding |
 | `serde` | `1.0.229` | Runtime / `ironpilot-domain`, `ironpilot-application`, `ironpilot-adapters` | Closed domain/configuration contracts and private Bybit DTO decoding | Apache-2.0 / MIT | Maintained upstream | `derive`, `std`; compile-time derive cost, no I/O or permissions | Replace derives with reviewed manual codecs if the wire layer changes |
-| `uuid` | `1.24.0` | Runtime / `ironpilot-domain` | Typed stable identifiers | Apache-2.0 / MIT | Maintained upstream | `serde`, `std`; generation features are disabled, no randomness or I/O | Replace with an internal 16-byte identifier while preserving canonical UUID text |
+| `uuid` | `1.24.0` | Runtime / `ironpilot-domain`, `ironpilot-adapters` | Typed stable identifiers and unpredictable in-memory Telegram Emergency challenge nonces | Apache-2.0 / MIT | Maintained upstream | Domain enables `serde`, `std`; adapters enable `std`, `v4`; randomness is used only for bounded Emergency challenge creation | Replace with an audited identifier and CSPRNG boundary while preserving canonical UUID text and one-time challenge semantics |
 | `noyalib` | `0.0.16` | Runtime / `ironpilot-adapters` | Strict YAML startup configuration parsing | Apache-2.0 / MIT | Maintained upstream; pre-1.0 API is version-pinned | `minimal` only; pure Rust, configuration input capped at 64 KiB | Replace with another reviewed Serde YAML decoder or a schema-specific parser |
 | `serde_json` | `1.0.151` | Runtime / `ironpilot-application`, `ironpilot-adapters`; Development / `ironpilot-domain` | Structured audit/outbox payloads, bounded provider/Bybit JSON decoding, and exact raw JSON evidence | Apache-2.0 / MIT | Maintained upstream | `raw_value`, `std`; adapter response bodies are bounded before decoding | Replace runtime values with versioned schema-specific codecs |
 | `reqwest` | `0.13.4` | Runtime / `ironpilot-adapters` | Bybit V5 public REST transport and the HTTP transport supplied to `async-openai` | Apache-2.0 / MIT | Maintained upstream | `rustls`; redirects disabled; bounded connect/request timeouts and adapter-owned 128/256 KiB response caps | Replace behind adapter/SDK boundaries while preserving DTO, timeout, evidence and error-classification contracts |
+| `reqwest` (`teloxide-reqwest`) | `0.12.28` | Runtime / `ironpilot-adapters` | Version-compatible HTTP client supplied to `teloxide-core` so IronPilot can enforce timeout and redirect policy without implementing Telegram protocol logic | Apache-2.0 / MIT | Maintained upstream; version line is selected by `teloxide-core 0.13.0` and locked | Defaults disabled; TLS is owned by `teloxide-core`'s `rustls` feature; adapter configures bounded timeouts and no redirects | Remove the direct alias when the Telegram SDK exposes equivalent client-policy configuration without it |
 | `async-openai` | `0.41.1` | Runtime / `ironpilot-adapters` | Mature OpenAI-compatible client for the DeepSeek chat-completion protocol | MIT | Maintained upstream; version and feature set locked | `byot`, `chat-completion`, `middleware`, `rustls`; defaults disabled; BYOT carries DeepSeek fields; one bounded Tower service disables hidden retries and captures at most 128 KiB | Replace with another maintained OpenAI-compatible client while preserving the Prompt, raw evidence, budget and strict-plan contracts |
+| `teloxide-core` | `0.13.0` | Runtime / `ironpilot-adapters` | Mature Telegram Rust SDK for Bot API methods, request/response types, response envelope decoding and long-poll update models | MIT | Maintained upstream in the widely adopted Teloxide ecosystem; version and feature set locked | Defaults disabled; `rustls` only; one bounded `getUpdates` call at a time, no adapter retry loop, batches capped by the Telegram policy | Replace with another maintained Telegram SDK only if it preserves SDK-owned protocol behavior, identity evidence and bounded polling |
 | `http` | `1.4.2` | Runtime / `ironpilot-adapters` | Rebuild the already bounded provider response passed from IronPilot's evidence middleware back into `async-openai` | Apache-2.0 / MIT | Maintained upstream with the Hyper ecosystem | No direct features; response metadata/body only, no network access | Remove when the provider SDK exposes a public bounded raw-response hook |
 | `tower-service` | `0.3.3` | Runtime / `ironpilot-adapters` | Implement the minimal SDK transport service boundary without importing Tower utility layers | MIT | Stable, maintained ecosystem interface | No features; one cloneable service with no queue or retry layer | Remove when the provider SDK exposes an equivalent bounded raw-response hook |
 | `futures-util` | `0.3.33` | Runtime / `ironpilot-adapters` | Minimal async stream/sink extensions for the public WebSocket transport | Apache-2.0 / MIT | Maintained upstream | `sink`, `std`; no executor or unbounded channel features | Replace with direct poll adapters if the WebSocket transport changes |
@@ -69,6 +71,22 @@ middleware required by project invariants. The middleware streams and caps the
 body before deserialization, records the exact response, and replaces the SDK's
 default retry executor. Therefore one IronPilot provider attempt is one HTTP
 request; no SDK retry can escape the call/token/cost evidence boundary.
+
+### P3-07 Telegram client choice
+
+P3-07 uses `teloxide-core 0.13.0` for Bot API method construction,
+Telegram request and response types, response envelope decoding, `getUpdates`
+long-poll models, and `sendMessage`. IronPilot owns only the bounded domain
+adapter: chat/user allowlists, read-only command routing, Emergency
+challenge/confirmation policy, SQLite read models, notification text, offset
+handoff, and audit boundaries.
+
+The adapter supplies a version-compatible `reqwest 0.12` client solely to
+enforce bounded connect/request timeouts and disabled redirects. It does not
+construct Telegram endpoints, wire DTOs, response envelopes, protocol retry
+loops, or error decoders. Polling remains one SDK request per adapter call; the
+caller persists the returned offset only after processing any confirmed
+Emergency command.
 
 ## Workspace boundaries
 
