@@ -55,6 +55,7 @@ skip = [
     { crate = "rand@0.9.5", reason = "async-openai and proptest use rand 0.9 while Tokio-Tungstenite 0.30 uses rand 0.10" },
     { crate = "rand_core@0.9.5", reason = "async-openai and proptest use rand_core 0.9 while Tokio-Tungstenite 0.30 uses rand_core 0.10" },
     { crate = "reqwest@0.12.28", reason = "Teloxide Core 0.13 pins Reqwest 0.12 while the existing adapters and async-openai use Reqwest 0.13" },
+    { crate = "sha2@0.11.0", reason = "Patisson Bybit SDK uses HMAC 0.13's digest 0.11 generation while SQLx and existing domain hashing remain on SHA-2 0.10" },
     { crate = "syn@2.0.119", reason = "SQLx 0.9 macros use syn 2 while current Serde and thiserror derives use syn 3" },
     { crate = "wasm-streams@0.4.2", reason = "Teloxide Core's Reqwest 0.12 uses wasm-streams 0.4 while Reqwest 0.13 uses 0.5" },
     { crate = "webpki-roots@0.26.11", reason = "Teloxide Core's Reqwest 0.12 and Tokio-Tungstenite still expose WebPKI Roots 0.26 alongside 1.0" },
@@ -95,7 +96,7 @@ exact = true
 
 [[bans.features]]
 crate = "rust_decimal@1.42.1"
-allow = ["default", "serde", "std"]
+allow = ["default", "serde", "serde-str", "serde-with-str", "std"]
 exact = true
 
 [[bans.features]]
@@ -464,7 +465,12 @@ exact = true
 
 [[bans.features]]
 crate = "digest@0.11.3"
-allow = ["alloc", "block-api", "default", "oid"]
+allow = ["alloc", "block-api", "default", "mac", "oid"]
+exact = true
+
+[[bans.features]]
+crate = "ordered-float@2.10.1"
+allow = ["default", "std"]
 exact = true
 
 [[bans.features]]

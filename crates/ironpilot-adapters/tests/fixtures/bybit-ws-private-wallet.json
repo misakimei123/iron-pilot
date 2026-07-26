@@ -1,0 +1,43 @@
+{
+  "id": "spot-wallet-message-1",
+  "topic": "wallet",
+  "creationTime": 1766600382000,
+  "data": [{
+    "accountIMRate": "0",
+    "accountIMRateByMp": "0",
+    "accountMMRate": "0",
+    "accountMMRateByMp": "0",
+    "totalEquity": "41.2",
+    "totalWalletBalance": "41.2",
+    "totalMarginBalance": "41.2",
+    "totalAvailableBalance": "1.2",
+    "totalPerpUPL": "0",
+    "totalInitialMargin": "0",
+    "totalInitialMarginByMp": "0",
+    "totalMaintenanceMargin": "0",
+    "totalMaintenanceMarginByMp": "0",
+    "coin": [{
+      "coin": "BTC",
+      "equity": "0.001",
+      "usdValue": "40",
+      "walletBalance": "0.001",
+      "availableToWithdraw": "0",
+      "availableToBorrow": "",
+      "borrowAmount": "0",
+      "accruedInterest": "0",
+      "totalOrderIM": "",
+      "totalPositionIM": "",
+      "totalPositionMM": "",
+      "unrealisedPnl": "0",
+      "cumRealisedPnl": "0",
+      "bonus": "0",
+      "collateralSwitch": true,
+      "marginCollateral": true,
+      "locked": "0.001",
+      "spotHedgingQty": "0",
+      "spotBorrow": "0"
+    }],
+    "accountLTV": "0",
+    "accountType": "UNIFIED"
+  }]
+}

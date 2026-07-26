@@ -1,0 +1,108 @@
+[package]
+name = "patisson-bybit-sdk"
+version = "0.2.3"
+edition = "2024"
+authors = ["Yurii Musolov <yurii.musolov@gmail.com>"]
+description = "Unofficial Rust SDK for the Bybit exchange API"
+documentation = "https://docs.rs/crate/patisson-bybit-sdk"
+readme = "README.md"
+keywords = ["bybit", "sdk", "crypto", "trading", "cryptocurrency"]
+categories = ["api-bindings", "cryptography::cryptocurrencies"]
+license = "MIT"
+repository = "https://github.com/yurii-musolov/patisson-bybit-sdk"
+autoexamples = false
+
+[lib]
+name = "bybit"
+path = "src/lib.rs"
+
+# IronPilot manifest overlay for upstream 0.2.3. The SDK source is unchanged.
+# This removes unused native TLS, system proxy, HTTP/2, Tokio process/signal,
+# and duplicate WebSocket stacks while retaining its HTTP/WS protocol surface.
+[dependencies.futures-util]
+version = "0.3.33"
+default-features = false
+features = ["sink", "std"]
+
+[dependencies.hex]
+version = "0.4.3"
+default-features = false
+features = ["alloc"]
+
+[dependencies.hmac]
+version = "0.13.0"
+default-features = false
+
+[dependencies.reqwest]
+version = "0.13.4"
+default-features = false
+features = ["json", "query", "rustls"]
+
+[dependencies.rust_decimal]
+version = "1.42.1"
+default-features = false
+features = ["std", "serde-str", "serde-with-str"]
+
+[dependencies.serde]
+version = "1.0.229"
+default-features = false
+features = ["derive", "std"]
+
+[dependencies.serde-aux]
+version = "4.7"
+default-features = false
+
+[dependencies.serde_json]
+version = "1.0.151"
+default-features = false
+features = ["std"]
+
+[dependencies.serde_path_to_error]
+version = "0.1.20"
+default-features = false
+
+[dependencies.serde_repr]
+version = "0.1.20"
+default-features = false
+
+[dependencies.serde_urlencoded]
+version = "0.7.1"
+default-features = false
+
+[dependencies.sha2]
+version = "0.11.0"
+default-features = false
+features = ["alloc"]
+
+[dependencies.thiserror]
+version = "2.0.19"
+default-features = false
+
+[dependencies.tokio]
+version = "1.53.1"
+default-features = false
+features = ["macros", "net", "rt", "sync", "time"]
+
+[dependencies.tokio-tungstenite]
+version = "0.30.0"
+default-features = false
+features = ["connect", "rustls-tls-webpki-roots"]
+
+[dependencies.tokio-util]
+version = "0.7.19"
+default-features = false
+
+[dependencies.tracing]
+version = "0.1.44"
+default-features = false
+features = ["std"]
+
+[dependencies.tungstenite]
+version = "0.30.0"
+default-features = false
+features = ["handshake"]
+
+[dependencies.url]
+version = "2.5.8"
+default-features = false
+features = ["std"]

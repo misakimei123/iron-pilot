@@ -20,3 +20,6 @@ unused_must_use = "deny"
 
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }
+
+[patch.crates-io]
+patisson-bybit-sdk = { path = "vendor/patisson-bybit-sdk-0.2.3" }

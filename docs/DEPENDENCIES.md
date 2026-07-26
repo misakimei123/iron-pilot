@@ -19,6 +19,7 @@ features are disabled; only the listed features are enabled.
 | `reqwest` (`teloxide-reqwest`) | `0.12.28` | Runtime / `ironpilot-adapters` | Version-compatible HTTP client supplied to `teloxide-core` so IronPilot can enforce timeout and redirect policy without implementing Telegram protocol logic | Apache-2.0 / MIT | Maintained upstream; version line is selected by `teloxide-core 0.13.0` and locked | Defaults disabled; TLS is owned by `teloxide-core`'s `rustls` feature; adapter configures bounded timeouts and no redirects | Remove the direct alias when the Telegram SDK exposes equivalent client-policy configuration without it |
 | `async-openai` | `0.41.1` | Runtime / `ironpilot-adapters` | Mature OpenAI-compatible client for the DeepSeek chat-completion protocol | MIT | Maintained upstream; version and feature set locked | `byot`, `chat-completion`, `middleware`, `rustls`; defaults disabled; BYOT carries DeepSeek fields; one bounded Tower service disables hidden retries and captures at most 128 KiB | Replace with another maintained OpenAI-compatible client while preserving the Prompt, raw evidence, budget and strict-plan contracts |
 | `teloxide-core` | `0.13.0` | Runtime / `ironpilot-adapters` | Mature Telegram Rust SDK for Bot API methods, request/response types, response envelope decoding and long-poll update models | MIT | Maintained upstream in the widely adopted Teloxide ecosystem; version and feature set locked | Defaults disabled; `rustls` only; one bounded `getUpdates` call at a time, no adapter retry loop, batches capped by the Telegram policy | Replace with another maintained Telegram SDK only if it preserves SDK-owned protocol behavior, identity evidence and bounded polling |
+| `patisson-bybit-sdk` | `0.2.3` | Runtime / `ironpilot-adapters` | Typed Bybit V5 private WebSocket events, authentication/subscription messages, order REST models, heartbeat and finite reconnect state machine | MIT | Maintained unofficial SDK; exact version and local audit overlay locked | Rustls only; 32-command/256-event bounded queues; five finite reconnect attempts; upstream source retained with one backpressure safety patch and a manifest-only feature reduction | Remove the local overlay when upstream exposes equivalent minimal features and lossless bounded event delivery; replace the SDK only behind the private-sync boundary |
 | `quant-metrics` | `0.7.0` | Runtime / `ironpilot-application` offline evaluation | Mature pure-math Rust library for exact-decimal total return, maximum drawdown and trade expectancy | MIT | Maintained upstream in the Quant Core workspace; version locked | No I/O, async, model or execution surface; upstream has no feature flags and brings exact-reviewed Chrono/Serde/quant-indicators defaults, pinned in `deny.toml`; evaluation records capped at 100,000 | Replace only with a maintained exact-decimal metrics library and retain independent reference tie-out vectors |
 | `http` | `1.4.2` | Runtime / `ironpilot-adapters` | Rebuild the already bounded provider response passed from IronPilot's evidence middleware back into `async-openai` | Apache-2.0 / MIT | Maintained upstream with the Hyper ecosystem | No direct features; response metadata/body only, no network access | Remove when the provider SDK exposes a public bounded raw-response hook |
 | `tower-service` | `0.3.3` | Runtime / `ironpilot-adapters` | Implement the minimal SDK transport service boundary without importing Tower utility layers | MIT | Stable, maintained ecosystem interface | No features; one cloneable service with no queue or retry layer | Remove when the provider SDK exposes an equivalent bounded raw-response hook |
@@ -106,6 +107,26 @@ the three comparable arms, immutable Context/Prompt/Model/Plan/Validator/
 Execution bindings, user authorization, OOS split, stress inputs, rejection
 taxonomy, per-trade provenance, safety-failure precedence and independent
 reference tie-out.
+
+### P4-01 Bybit private client choice
+
+P4-01 compared the new official `bybit-api`, `bybit-client`, `rs_bybit`, and
+`patisson-bybit-sdk`. The official crate is very new and exposes private
+payloads as generic JSON values; the other reviewed clients use unbounded
+channels or broader hidden runtime/network defaults. `patisson-bybit-sdk
+0.2.3` was selected because it supplies typed order, execution and wallet
+messages, SDK-owned private authentication/subscription messages, configurable
+bounded queues, heartbeat handling and finite exponential reconnects.
+
+The published manifest enabled native TLS, system proxy discovery, HTTP/2,
+Tokio `full`, process/signal support and a duplicate WebSocket stack. The
+version-pinned local overlay retains the upstream SDK source and narrows that
+graph to Rustls, the existing Tokio/WebSocket versions and the exact features
+required to compile. One minimal safety patch changes a full event queue from
+silent `try_send` loss to awaited bounded backpressure. It does not change
+Bybit endpoints, wire DTOs, authentication, serialization, heartbeat or
+reconnect protocol logic. `deny.toml` exact feature and duplicate-version
+checks fail closed on dependency drift.
 
 The crate is pure math with no I/O or async surface. Its upstream manifest does
 not expose feature switches and currently brings Chrono, quant-primitives and

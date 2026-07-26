@@ -5,6 +5,7 @@
 
 #![forbid(unsafe_code)]
 
+mod bybit_private;
 mod bybit_public;
 mod bybit_public_websocket;
 mod config;
@@ -18,6 +19,13 @@ mod persistence;
 mod resources;
 mod telegram;
 
+pub use bybit_private::{
+    BYBIT_PRIVATE_COMMAND_QUEUE_SIZE, BYBIT_PRIVATE_EVENT_QUEUE_SIZE,
+    BYBIT_PRIVATE_MAX_RECONNECT_ATTEMPTS, BYBIT_PRIVATE_SYNC_VERSION_V1, BybitContextFacts,
+    BybitOrderFact, BybitPrivateEvidenceCounts, BybitPrivateIngestReport, BybitPrivateSyncError,
+    BybitReconciliationSnapshot, BybitSyncEffect, BybitWalletFact, MAX_BYBIT_PRIVATE_BATCH_RECORDS,
+    SqliteBybitPrivateSync, bybit_private_sdk_config, start_bybit_private_sdk_stream,
+};
 pub use bybit_public::{
     BYBIT_MAINNET_PUBLIC_REST_URL, BybitPublicRestClient, BybitPublicRestError,
     DEFAULT_INSTRUMENT_RULES_TTL, INSTRUMENT_RULES_HASH_SCHEMA_V1, MAX_INSTRUMENT_RULES_TTL,
