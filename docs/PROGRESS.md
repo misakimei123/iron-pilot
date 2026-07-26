@@ -22,12 +22,11 @@
 - Current phase: Phase C — AI-Dominant Paper
 - In progress: None
 - Ready:
-  - P3-10A
   - P3-06
   - P3-07A
   - P3-08
 - Blocked: None
-- Next recommended task: P3-10A
+- Next recommended task: P3-06
 
 ## Task Status
 
@@ -54,7 +53,7 @@
 | `P3-04` | `DONE` | 2026-07-25 | 2026-07-25 | `98f30dddf68ab8fc88c522d9a24e1c2c123da3c7`；`7928509ddad5ff65e8ab4e8540db86b0d6cc00c6` | Prompt v1；`async-openai` DeepSeek client；strict parse；usage/cost/latency；预算；一次 replan；原始证据；13 项专项测试与全量门禁 | v3.1.0 开源优先重构；未批准任何阶段 Gate；确定性门禁不调用线上 DeepSeek |
 | `P3-13` | `DONE` | 2026-07-26 | 2026-07-26 | `86203e92147acfd5671b158fd1edf546685a9347` | `ironpilot-execution-validator-v1`；完整兼容性/授权/最大亏损校验；原子 validation ledger；8 项专项持久化与领域测试；121 项全工作区测试及全部质量门禁 | 只返回 ACCEPT/REJECT，未修改 AI 方案或生成订单；未批准任何阶段 Gate |
 | `P3-05` | `DONE` | 2026-07-26 | 2026-07-26 | `e05918fc57a3b51f9b94d6d42cc1a9b05e1ab7b9` | `ironpilot-spot-execution-v1`；共享 port；精确订单映射；部分成交/费用/滑点/保护单/ManagedLot；4 项专项测试；125 项全工作区测试及全部质量门禁 | 未修改开发计划；未批准任何阶段 Gate |
-| `P3-10A` | `READY` | — | — | — | — | P2-04、P3-05 与 P3-13 完成后依赖已满足 |
+| `P3-10A` | `DONE` | 2026-07-26 | 2026-07-26 | `5f8b097220e94caed14ba74d1513410819370e14` | `ironpilot-minimal-historical-harness-v1`；确定性/前缀不变/无前视 2 项专项测试；127 项全工作区测试及全部质量门禁 | 不调用实时 LLM，不包含 Materializer/Risk Engine，不构建完整绩效平台；未批准任何阶段 Gate |
 | `P3-06` | `READY` | — | — | — | — | P3-04、P3-05 与 P3-13 完成后依赖已满足 |
 | `P3-07A` | `READY` | — | — | — | — | P1-05 与 P3-03 完成后依赖已满足 |
 | `P3-08` | `READY` | — | — | — | — | P3-01、P3-03 与 P3-05 完成后依赖已满足 |
@@ -234,9 +233,17 @@ None.
 - 门禁：3 项 application 撮合/映射测试与 1 项 SQLite 端到端测试覆盖 AI entry/stop/take-profit 字段逐项一致、稳定 request hash、Limit 部分成交、Market 滑点与 maker/taker fee、同一决策事实拒绝、提交/observation 重放零副作用、保护单延迟激活、止损清仓、ManagedLot 累积/消耗及原子状态推进；全工作区 125 项测试通过、0 失败，1 项既有 Bybit 线上 WSS 只读测试保持显式忽略；`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo test --workspace --all-targets --locked`、`cargo build --workspace --all-targets --locked`、`cargo metadata --locked --no-deps`、cargo-deny 0.19.4 advisories/bans/licenses/sources、Gitleaks 48 提交历史与源码工作树扫描、共享 port/无同事实成交/幂等/原样字段/ManagedLot 静态断言和 `git diff --check` 全部通过；`docs/DEVELOPMENT_PLAN.md` 零差异。
 - 已知限制：本 Task 提供共享 port 合同和 SQLite Paper adapter；Minimal Historical Harness、Testnet adapter、业务主循环、私有流同步与 Emergency Core 分别由其后续 Task 实现。本 Task 完成不批准任何阶段 Gate，也不授权 Testnet/Live 写入。
 
+### P3-10A — Minimal Historical Harness
+
+- 结果：实现版本化 `ironpilot-minimal-historical-harness-v1`，以录制的完整 `AiTradePlanLedgerEntry` 和固定 Validation/订单 ID/行情 observation 为输入，复用现有 `ExecutionValidator`、`SpotExecutionRequest::from_accepted_plan` 与 `SqlitePaperExecutionPort`，完整运行 AI Plan → Validation → TradePlan → Paper；费用、滑点、部分成交、保护单和 ManagedLot 继续由既有 Paper policy/matching engine 执行，不包含 AI Provider、HTTP、Prompt、实时 LLM、Materializer 或后置 Risk Engine。
+- 确定性与无前视：每个成功运行生成绑定 Context/plan/validation/execution-request hash、稳定 Fill ID 和逐 observation 累计 hash 的确定性账本报告；相同输入在独立 SQLite 数据库中产生相同报告和规范账本行，追加后续 observation 不改变已有记录与累计 hash 前缀。任何 observation 使用不晚于 Context `as_of` 的决策事实、乱序时间、重复 ID、错误标的、空输入或超过 10,000 条资源上限时，均在写入前 fail closed；Paper adapter 保留事务内第二重决策事实复用检查。
+- Commit：`5f8b097220e94caed14ba74d1513410819370e14`。
+- 门禁：2 项专项测试覆盖独立数据库确定性、规范 SQLite 账本相等、累计 hash 前缀不变、maker fee/精确成交、保护止损扩展和决策事实复用零写入；全工作区 127 项测试通过、0 失败，1 项既有 Bybit 线上 WSS 只读测试保持显式忽略；`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo test --workspace --all-targets --locked`、`cargo build --workspace --all-targets --locked`、`cargo metadata --locked --no-deps`、cargo-deny 0.19.4 advisories/bans/licenses/sources、Gitleaks 51 提交历史与源码工作树扫描、共享 Validator/TradePlan/Paper 与无实时 LLM/Materializer/Risk Engine 静态断言和 `git diff --check` 全部通过；`docs/DEVELOPMENT_PLAN.md` 零差异。
+- 已知限制：本 Task 只证明最小可复现执行链，不实现完整绩效统计、优化、参数搜索、组合分析或 P3-10B Full Historical Strategy Evaluation；不授权 Testnet/Live 写入，也不批准 `P3-VS` 或任何阶段 Gate。
+
 ## Next Action
 
-Execute P3-10A next. P3-06, P3-07A and P3-08 are also READY and remain independent until downstream dependencies converge.
+Execute P3-06 next. P3-07A and P3-08 are also READY and remain independent until downstream dependencies converge.
 
 以上内容是依据 `docs/DEVELOPMENT_PLAN.md` 静态依赖生成的进度建议，不改变任何 Task 依赖。
 
