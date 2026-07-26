@@ -21,12 +21,12 @@
 
 - Current phase: Phase E — Parallel Hardening
 - In progress:
-  - None
-- Ready:
   - P4-02A
+- Ready:
+  - None
 - Blocked:
   - P3-11
-- Next recommended task: request explicit Testnet write authorization before starting P4-02A; P3-11 still waits for an operator-controlled 30-day Paper environment
+- Next recommended task: complete the explicitly authorized P4-02A Testnet protocol smoke; P3-11 still waits for an operator-controlled 30-day Paper environment
 
 ## Task Status
 
@@ -62,7 +62,7 @@
 | `P3-10B` | `DONE` | 2026-07-26 | 2026-07-26 | `d4f732624574758a8972674ac7e19b9a5eef4860` | `docs/FULL_HISTORICAL_STRATEGY_EVALUATION_V1.md`; 3 targeted tests; 146 workspace tests | Offline-only evaluation; Rule-only is not production eligible; no stage Gate approved |
 | `P3-11` | `BLOCKED` | 2026-07-26 | — | `76049ec4284e583346716ec85abd97994df46104` | `docs/LONG_RUNNING_PAPER_SAFETY_V1.md`; 5 targeted tests; 151 workspace tests | Evidence implementation complete; real 30-day Paper window, credentials, drills, and reviewer Gate remain |
 | `P4-01` | `DONE` | 2026-07-26 | 2026-07-26 | `3711e2761c2481363788ca6802b703fb635347ca` | `docs/BYBIT_PRIVATE_SYNC_V1.md`; 5 targeted tests; 156 workspace tests | SDK-owned private protocol; REST ack is not a fill; duplicate effect 0; disconnect/reconciliation convergence; next-Context facts; no stage Gate approved |
-| `P4-02A` | `READY` | — | — | — | P4-01 implementation and gates complete | Static dependencies are complete; execution still requires explicit Testnet write authorization |
+| `P4-02A` | `IN_PROGRESS` | 2026-07-26 | — | — | User explicitly authorized the bounded Bybit Testnet write smoke on 2026-07-26 | Testnet Spot-only; no Mainnet, real funds, stage Gate, derivatives or capability expansion |
 | `P4-02B` | `PLANNED` | — | — | — | — | — |
 | `P4-03` | `PLANNED` | — | — | — | — | — |
 | `P4-04` | `PLANNED` | — | — | — | — | — |
