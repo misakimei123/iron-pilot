@@ -67,9 +67,11 @@ pub use persistence::{
 };
 pub use resources::{ProcessResourceSampler, ResourceSampleError};
 pub use telegram::{
-    MAX_TELEGRAM_MESSAGE_CHARS, MAX_TELEGRAM_NOTIFICATION_EVENTS, MAX_TELEGRAM_QUERY_ROWS,
-    MAX_TELEGRAM_READONLY_CHATS, MAX_TELEGRAM_UPDATES_PER_POLL, TELEGRAM_BOT_API_BASE_URL,
-    TELEGRAM_BOT_TOKEN_ENV, TELEGRAM_READONLY_VERSION_V1, TelegramNotificationReport,
-    TelegramPollReport, TelegramReadOnlyAdapter, TelegramReadOnlyCommand, TelegramReadOnlyConfig,
-    TelegramReadOnlyError, TelegramReadOnlyText,
+    MAX_TELEGRAM_EMERGENCY_OPERATORS, MAX_TELEGRAM_MESSAGE_CHARS, MAX_TELEGRAM_NOTIFICATION_EVENTS,
+    MAX_TELEGRAM_PENDING_EMERGENCIES, MAX_TELEGRAM_QUERY_ROWS, MAX_TELEGRAM_READONLY_CHATS,
+    MAX_TELEGRAM_UPDATES_PER_POLL, TELEGRAM_BOT_API_BASE_URL, TELEGRAM_BOT_TOKEN_ENV,
+    TELEGRAM_EMERGENCY_VERSION_V1, TELEGRAM_READONLY_VERSION_V1, TelegramEmergencyCommand,
+    TelegramEmergencyPolicy, TelegramEmergencyPollReport, TelegramEmergencySession,
+    TelegramNotificationReport, TelegramPollReport, TelegramReadOnlyAdapter,
+    TelegramReadOnlyCommand, TelegramReadOnlyConfig, TelegramReadOnlyError, TelegramReadOnlyText,
 };

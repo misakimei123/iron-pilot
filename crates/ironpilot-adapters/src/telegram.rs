@@ -3,13 +3,19 @@ use core::str::FromStr;
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
-use ironpilot_domain::DomainDecimal;
+use ironpilot_application::{
+    AuthorizedEmergencyCommand, EmergencyCommandKind, MAX_EMERGENCY_COMMAND_TTL_MILLIS,
+};
+use ironpilot_domain::{DomainDecimal, EmergencyActionId};
+use sha2::{Digest, Sha256};
 use sqlx::Row;
 use teloxide_core::payloads::{GetUpdatesSetters, SendMessageSetters};
 use teloxide_core::requests::Requester;
-use teloxide_core::types::{AllowedUpdate, ChatId, UpdateKind};
+use teloxide_core::types::{AllowedUpdate, ChatId, Update, UpdateKind};
 use teloxide_core::{Bot, RequestError};
 use teloxide_reqwest::{Client as TelegramHttpClient, Url, redirect};
+use tokio::sync::Mutex;
+use uuid::Uuid;
 
 use crate::{SqliteRepository, StorageError};
 
@@ -21,11 +27,17 @@ pub const MAX_TELEGRAM_UPDATES_PER_POLL: u8 = 32;
 pub const MAX_TELEGRAM_QUERY_ROWS: u8 = 20;
 pub const MAX_TELEGRAM_NOTIFICATION_EVENTS: u8 = 32;
 pub const MAX_TELEGRAM_READONLY_CHATS: usize = 8;
+pub const TELEGRAM_EMERGENCY_VERSION_V1: &str = "ironpilot-telegram-emergency-v1";
+pub const MAX_TELEGRAM_EMERGENCY_OPERATORS: usize = 8;
+pub const MAX_TELEGRAM_PENDING_EMERGENCIES: usize = 16;
 
 const MIN_REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
 const MAX_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_LONG_POLL_TIMEOUT_SECONDS: u64 = 25;
 const MAX_STORED_TEXT_BYTES: i64 = 8_192;
+const MIN_EMERGENCY_CONFIRMATION_TTL: Duration = Duration::from_secs(10);
+const MAX_EMERGENCY_CONFIRMATION_TTL: Duration = Duration::from_secs(120);
+const MIN_EMERGENCY_COMMAND_TTL: Duration = Duration::from_secs(10);
 
 pub struct TelegramReadOnlyConfig {
     bot_token: Box<str>,
@@ -271,6 +283,251 @@ impl TelegramNotificationReport {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TelegramEmergencyCommand {
+    BeginCloseAll,
+    ConfirmCloseAll { nonce: Box<str> },
+}
+
+impl TelegramEmergencyCommand {
+    pub fn parse(text: &str) -> Result<Option<Self>, TelegramReadOnlyError> {
+        let text = text.trim();
+        if text.is_empty() || !text.starts_with('/') {
+            return Ok(None);
+        }
+        if text.len() > 256 || text.chars().any(|character| character == '\0') {
+            return Err(TelegramReadOnlyError::InvalidCommand);
+        }
+        let mut fields = text.split_whitespace();
+        let command = fields
+            .next()
+            .expect("a non-empty command has a first token")
+            .split('@')
+            .next()
+            .expect("split always has a first field")
+            .to_ascii_lowercase();
+        let arguments = fields.collect::<Vec<_>>();
+        match command.as_str() {
+            "/emergency_close_all" => {
+                if arguments.is_empty() {
+                    Ok(Some(Self::BeginCloseAll))
+                } else {
+                    Err(TelegramReadOnlyError::InvalidCommand)
+                }
+            }
+            "/confirm_emergency_close_all" => match arguments.as_slice() {
+                [nonce]
+                    if nonce.len() == 32 && nonce.bytes().all(|byte| byte.is_ascii_hexdigit()) =>
+                {
+                    Ok(Some(Self::ConfirmCloseAll {
+                        nonce: nonce.to_ascii_lowercase().into_boxed_str(),
+                    }))
+                }
+                _ => Err(TelegramReadOnlyError::InvalidCommand),
+            },
+            _ => Ok(None),
+        }
+    }
+}
+
+pub struct TelegramEmergencyPolicy {
+    allowed_user_ids: BTreeSet<u64>,
+    confirmation_ttl: Duration,
+    command_ttl: Duration,
+}
+
+impl TelegramEmergencyPolicy {
+    pub fn new(
+        allowed_user_ids: Vec<u64>,
+        confirmation_ttl: Duration,
+        command_ttl: Duration,
+    ) -> Result<Self, TelegramReadOnlyError> {
+        if allowed_user_ids.is_empty()
+            || allowed_user_ids.len() > MAX_TELEGRAM_EMERGENCY_OPERATORS
+            || allowed_user_ids.contains(&0)
+            || !(MIN_EMERGENCY_CONFIRMATION_TTL..=MAX_EMERGENCY_CONFIRMATION_TTL)
+                .contains(&confirmation_ttl)
+            || command_ttl < MIN_EMERGENCY_COMMAND_TTL
+            || command_ttl.as_millis() > u128::from(MAX_EMERGENCY_COMMAND_TTL_MILLIS)
+        {
+            return Err(TelegramReadOnlyError::InvalidConfiguration);
+        }
+        let supplied_user_count = allowed_user_ids.len();
+        let allowed_user_ids = allowed_user_ids.into_iter().collect::<BTreeSet<_>>();
+        if allowed_user_ids.len() != supplied_user_count {
+            return Err(TelegramReadOnlyError::InvalidConfiguration);
+        }
+        Ok(Self {
+            allowed_user_ids,
+            confirmation_ttl,
+            command_ttl,
+        })
+    }
+}
+
+pub struct TelegramEmergencySession {
+    policy: TelegramEmergencyPolicy,
+    pending: Mutex<BTreeMap<(i64, u64), PendingEmergencyChallenge>>,
+}
+
+impl TelegramEmergencySession {
+    #[must_use]
+    pub fn new(policy: TelegramEmergencyPolicy) -> Self {
+        Self {
+            policy,
+            pending: Mutex::new(BTreeMap::new()),
+        }
+    }
+
+    fn is_authorized_user(&self, user_id: u64) -> bool {
+        self.policy.allowed_user_ids.contains(&user_id)
+    }
+
+    async fn handle(
+        &self,
+        chat_id: i64,
+        user_id: u64,
+        update_id: i64,
+        command: TelegramEmergencyCommand,
+        now_unix_millis: u64,
+    ) -> Result<TelegramEmergencyOutcome, TelegramReadOnlyError> {
+        if !self.policy.allowed_user_ids.contains(&user_id) {
+            return TelegramEmergencyOutcome::reply("Emergency authorization rejected.");
+        }
+        let key = (chat_id, user_id);
+        let mut pending = self.pending.lock().await;
+        pending.retain(|_, challenge| challenge.expires_at_unix_millis > now_unix_millis);
+        match command {
+            TelegramEmergencyCommand::BeginCloseAll => {
+                if pending.len() >= MAX_TELEGRAM_PENDING_EMERGENCIES && !pending.contains_key(&key)
+                {
+                    return Err(TelegramReadOnlyError::EmergencyCapacityExceeded);
+                }
+                let action_id = EmergencyActionId::new(Uuid::new_v4())
+                    .map_err(|_| TelegramReadOnlyError::InvalidResponse)?;
+                let nonce = Uuid::new_v4().simple().to_string();
+                let nonce_hash = Sha256::digest(nonce.as_bytes()).into();
+                let expires_at_unix_millis = now_unix_millis
+                    .checked_add(duration_millis(self.policy.confirmation_ttl)?)
+                    .ok_or(TelegramReadOnlyError::InvalidCommand)?;
+                let authorization_evidence_hash = telegram_authorization_hash(
+                    chat_id,
+                    user_id,
+                    update_id,
+                    action_id,
+                    now_unix_millis,
+                );
+                pending.insert(
+                    key,
+                    PendingEmergencyChallenge {
+                        action_id,
+                        authorization_evidence_hash,
+                        nonce_hash,
+                        expires_at_unix_millis,
+                    },
+                );
+                TelegramEmergencyOutcome::reply(&format!(
+                    "Emergency close requires a second confirmation.\n\
+                     No order or position has changed.\n\
+                     Challenge expires at: {expires_at_unix_millis}\n\
+                     Confirm with:\n/confirm_emergency_close_all {nonce}"
+                ))
+            }
+            TelegramEmergencyCommand::ConfirmCloseAll { nonce } => {
+                let Some(challenge) = pending.remove(&key) else {
+                    return TelegramEmergencyOutcome::reply(
+                        "No active emergency confirmation. Start again with /emergency_close_all.",
+                    );
+                };
+                let supplied_nonce_hash: [u8; 32] = Sha256::digest(nonce.as_bytes()).into();
+                if challenge.expires_at_unix_millis <= now_unix_millis
+                    || supplied_nonce_hash != challenge.nonce_hash
+                {
+                    return TelegramEmergencyOutcome::reply(
+                        "Emergency confirmation rejected. The challenge is no longer valid.",
+                    );
+                }
+                let expires_at_unix_millis = now_unix_millis
+                    .checked_add(duration_millis(self.policy.command_ttl)?)
+                    .ok_or(TelegramReadOnlyError::InvalidCommand)?;
+                let authorized = AuthorizedEmergencyCommand::new(
+                    challenge.action_id,
+                    EmergencyCommandKind::CloseAllManagedExposure,
+                    format!("telegram:user:{user_id}:chat:{chat_id}"),
+                    challenge.authorization_evidence_hash,
+                    challenge.nonce_hash,
+                    now_unix_millis,
+                    expires_at_unix_millis,
+                )
+                .map_err(|_| TelegramReadOnlyError::InvalidCommand)?;
+                Ok(TelegramEmergencyOutcome {
+                    reply: TelegramReadOnlyText::new(
+                        "Emergency confirmation accepted. The authorized command is ready for the Emergency Core; no direct Telegram order was created.".to_owned(),
+                    )?,
+                    authorized_command: Some(authorized),
+                })
+            }
+        }
+    }
+}
+
+struct PendingEmergencyChallenge {
+    action_id: EmergencyActionId,
+    authorization_evidence_hash: [u8; 32],
+    nonce_hash: [u8; 32],
+    expires_at_unix_millis: u64,
+}
+
+struct TelegramEmergencyOutcome {
+    reply: TelegramReadOnlyText,
+    authorized_command: Option<AuthorizedEmergencyCommand>,
+}
+
+impl TelegramEmergencyOutcome {
+    fn reply(value: &str) -> Result<Self, TelegramReadOnlyError> {
+        Ok(Self {
+            reply: TelegramReadOnlyText::new(value.to_owned())?,
+            authorized_command: None,
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TelegramEmergencyPollReport {
+    next_offset: Option<i64>,
+    received_updates: u8,
+    emergency_attempts: u8,
+    replies_sent: u8,
+    authorized_commands: Vec<AuthorizedEmergencyCommand>,
+}
+
+impl TelegramEmergencyPollReport {
+    #[must_use]
+    pub const fn next_offset(&self) -> Option<i64> {
+        self.next_offset
+    }
+
+    #[must_use]
+    pub const fn received_updates(&self) -> u8 {
+        self.received_updates
+    }
+
+    #[must_use]
+    pub const fn emergency_attempts(&self) -> u8 {
+        self.emergency_attempts
+    }
+
+    #[must_use]
+    pub const fn replies_sent(&self) -> u8 {
+        self.replies_sent
+    }
+
+    #[must_use]
+    pub fn authorized_commands(&self) -> &[AuthorizedEmergencyCommand] {
+        &self.authorized_commands
+    }
+}
+
 pub struct TelegramReadOnlyAdapter {
     bot: Bot,
     config: TelegramReadOnlyConfig,
@@ -326,34 +583,7 @@ impl TelegramReadOnlyAdapter {
         repository: &SqliteRepository,
         offset: Option<i64>,
     ) -> Result<TelegramPollReport, TelegramReadOnlyError> {
-        if offset.is_some_and(|value| value < 0) {
-            return Err(TelegramReadOnlyError::InvalidCommand);
-        }
-        let offset = offset
-            .map(i32::try_from)
-            .transpose()
-            .map_err(|_| TelegramReadOnlyError::InvalidCommand)?;
-        let mut request = self
-            .bot
-            .get_updates()
-            .limit(MAX_TELEGRAM_UPDATES_PER_POLL)
-            .timeout(
-                u32::try_from(self.config.long_poll_timeout_seconds())
-                    .expect("bounded long-poll timeout fits u32"),
-            )
-            .allowed_updates([AllowedUpdate::Message]);
-        if let Some(offset) = offset {
-            request = request.offset(offset);
-        }
-        let updates = tokio::time::timeout(self.config.request_timeout, request)
-            .await
-            .map_err(|_| TelegramReadOnlyError::Timeout)?
-            .map_err(classify_sdk_error)?;
-        if updates.len() > usize::from(MAX_TELEGRAM_UPDATES_PER_POLL)
-            || updates.windows(2).any(|pair| pair[0].id >= pair[1].id)
-        {
-            return Err(TelegramReadOnlyError::InvalidResponse);
-        }
+        let (updates, sdk_offset) = self.fetch_updates(offset).await?;
         let mut authorized_commands = 0_u8;
         let mut replies_sent = 0_u8;
         for update in &updates {
@@ -395,13 +625,133 @@ impl TelegramReadOnlyAdapter {
                     .ok_or(TelegramReadOnlyError::InvalidResponse)
             })
             .transpose()?
-            .or(offset.map(i64::from));
+            .or(sdk_offset.map(i64::from));
         Ok(TelegramPollReport {
             next_offset,
             received_updates: u8::try_from(updates.len())
                 .map_err(|_| TelegramReadOnlyError::InvalidResponse)?,
             authorized_commands,
             replies_sent,
+        })
+    }
+
+    pub async fn poll_once_with_emergency(
+        &self,
+        repository: &SqliteRepository,
+        emergency: &TelegramEmergencySession,
+        offset: Option<i64>,
+        now_unix_millis: u64,
+    ) -> Result<TelegramEmergencyPollReport, TelegramReadOnlyError> {
+        if now_unix_millis == 0 {
+            return Err(TelegramReadOnlyError::InvalidCommand);
+        }
+        let (updates, sdk_offset) = self.fetch_updates(offset).await?;
+        let mut emergency_attempts = 0_u8;
+        let mut replies_sent = 0_u8;
+        let mut authorized_commands = Vec::new();
+        for update in &updates {
+            let UpdateKind::Message(message) = &update.kind else {
+                continue;
+            };
+            let chat_id = message.chat.id.0;
+            if !self.config.allowed_chat_ids.contains(&chat_id) {
+                continue;
+            }
+            let Some(text) = message.text() else {
+                continue;
+            };
+            match TelegramEmergencyCommand::parse(text) {
+                Ok(Some(command)) => {
+                    emergency_attempts = emergency_attempts.saturating_add(1);
+                    let Some(user_id) = message.from.as_ref().map(|user| user.id.0) else {
+                        self.send_message(
+                            chat_id,
+                            &TelegramReadOnlyText::new(
+                                "Emergency authorization rejected.".to_owned(),
+                            )?,
+                        )
+                        .await?;
+                        replies_sent = replies_sent.saturating_add(1);
+                        continue;
+                    };
+                    let outcome = emergency
+                        .handle(
+                            chat_id,
+                            user_id,
+                            i64::from(update.id.0),
+                            command,
+                            now_unix_millis,
+                        )
+                        .await?;
+                    self.send_message(chat_id, &outcome.reply).await?;
+                    replies_sent = replies_sent.saturating_add(1);
+                    if let Some(command) = outcome.authorized_command {
+                        authorized_commands.push(command);
+                    }
+                }
+                Ok(None) => {
+                    let command = match TelegramReadOnlyCommand::parse(text) {
+                        Ok(Some(command)) => command,
+                        Ok(None) => continue,
+                        Err(_) => {
+                            self.send_message(
+                                chat_id,
+                                &TelegramReadOnlyText::new(
+                                    "Invalid command. Use /help.".to_owned(),
+                                )?,
+                            )
+                            .await?;
+                            replies_sent = replies_sent.saturating_add(1);
+                            continue;
+                        }
+                    };
+                    let response = self.execute_command(repository, &command).await?;
+                    let response = if matches!(command, TelegramReadOnlyCommand::Help)
+                        && message
+                            .from
+                            .as_ref()
+                            .is_some_and(|user| emergency.is_authorized_user(user.id.0))
+                    {
+                        TelegramReadOnlyText::new(format!(
+                            "{}\n\nProtected emergency control:\n/emergency_close_all - begin identity-bound two-step confirmation",
+                            response.as_str()
+                        ))?
+                    } else {
+                        response
+                    };
+                    self.send_message(chat_id, &response).await?;
+                    replies_sent = replies_sent.saturating_add(1);
+                }
+                Err(_) => {
+                    emergency_attempts = emergency_attempts.saturating_add(1);
+                    self.send_message(
+                        chat_id,
+                        &TelegramReadOnlyText::new(
+                            "Invalid emergency command. Start again with /emergency_close_all."
+                                .to_owned(),
+                        )?,
+                    )
+                    .await?;
+                    replies_sent = replies_sent.saturating_add(1);
+                }
+            }
+        }
+        let next_offset = updates
+            .last()
+            .map(|update| {
+                i64::from(update.id.0)
+                    .checked_add(1)
+                    .ok_or(TelegramReadOnlyError::InvalidResponse)
+            })
+            .transpose()?
+            .or(sdk_offset.map(i64::from));
+        Ok(TelegramEmergencyPollReport {
+            next_offset,
+            received_updates: u8::try_from(updates.len())
+                .map_err(|_| TelegramReadOnlyError::InvalidResponse)?,
+            emergency_attempts,
+            replies_sent,
+            authorized_commands,
         })
     }
 
@@ -472,6 +822,67 @@ impl TelegramReadOnlyAdapter {
             .map_err(classify_sdk_error)?;
         Ok(())
     }
+
+    async fn fetch_updates(
+        &self,
+        offset: Option<i64>,
+    ) -> Result<(Vec<Update>, Option<i32>), TelegramReadOnlyError> {
+        if offset.is_some_and(|value| value < 0) {
+            return Err(TelegramReadOnlyError::InvalidCommand);
+        }
+        let offset = offset
+            .map(i32::try_from)
+            .transpose()
+            .map_err(|_| TelegramReadOnlyError::InvalidCommand)?;
+        let mut request = self
+            .bot
+            .get_updates()
+            .limit(MAX_TELEGRAM_UPDATES_PER_POLL)
+            .timeout(
+                u32::try_from(self.config.long_poll_timeout_seconds())
+                    .expect("bounded long-poll timeout fits u32"),
+            )
+            .allowed_updates([AllowedUpdate::Message]);
+        if let Some(offset) = offset {
+            request = request.offset(offset);
+        }
+        let updates = tokio::time::timeout(self.config.request_timeout, request)
+            .await
+            .map_err(|_| TelegramReadOnlyError::Timeout)?
+            .map_err(classify_sdk_error)?;
+        if updates.len() > usize::from(MAX_TELEGRAM_UPDATES_PER_POLL)
+            || updates.windows(2).any(|pair| pair[0].id >= pair[1].id)
+        {
+            return Err(TelegramReadOnlyError::InvalidResponse);
+        }
+        Ok((updates, offset))
+    }
+}
+
+fn duration_millis(value: Duration) -> Result<u64, TelegramReadOnlyError> {
+    u64::try_from(value.as_millis()).map_err(|_| TelegramReadOnlyError::InvalidConfiguration)
+}
+
+fn telegram_authorization_hash(
+    chat_id: i64,
+    user_id: u64,
+    update_id: i64,
+    action_id: EmergencyActionId,
+    issued_at_unix_millis: u64,
+) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    for value in [
+        TELEGRAM_EMERGENCY_VERSION_V1.as_bytes(),
+        &chat_id.to_be_bytes(),
+        &user_id.to_be_bytes(),
+        &update_id.to_be_bytes(),
+        action_id.to_string().as_bytes(),
+        &issued_at_unix_millis.to_be_bytes(),
+    ] {
+        hasher.update(value.len().to_be_bytes());
+        hasher.update(value);
+    }
+    hasher.finalize().into()
 }
 
 fn parse_optional_limit(arguments: &[&str]) -> Result<u8, TelegramReadOnlyError> {
@@ -1000,6 +1411,7 @@ pub enum TelegramReadOnlyError {
     Transport,
     InvalidResponse,
     RemoteRejected,
+    EmergencyCapacityExceeded,
     Storage(StorageError),
 }
 
@@ -1021,6 +1433,9 @@ impl fmt::Display for TelegramReadOnlyError {
             Self::Transport => formatter.write_str("Telegram Bot API transport failed"),
             Self::InvalidResponse => formatter.write_str("Telegram Bot API response is invalid"),
             Self::RemoteRejected => formatter.write_str("Telegram Bot API rejected the request"),
+            Self::EmergencyCapacityExceeded => {
+                formatter.write_str("Telegram emergency confirmation capacity is exhausted")
+            }
             Self::Storage(error) => error.fmt(formatter),
         }
     }
@@ -1102,6 +1517,239 @@ mod tests {
         .err()
         .expect("invalid token should fail");
         assert!(!error.to_string().contains("secret-token"));
+    }
+
+    #[tokio::test]
+    async fn emergency_confirmation_is_identity_bound_one_time_and_ttl_bounded() {
+        assert!(
+            TelegramEmergencyPolicy::new(vec![7], Duration::from_secs(60), Duration::from_secs(60))
+                .is_ok()
+        );
+        assert!(
+            TelegramEmergencyPolicy::new(
+                vec![7, 7],
+                Duration::from_secs(60),
+                Duration::from_secs(60)
+            )
+            .is_err()
+        );
+        assert!(matches!(
+            TelegramEmergencyCommand::parse("/emergency_close_all"),
+            Ok(Some(TelegramEmergencyCommand::BeginCloseAll))
+        ));
+        assert!(
+            TelegramEmergencyCommand::parse("/confirm_emergency_close_all not-a-nonce").is_err()
+        );
+
+        let session = TelegramEmergencySession::new(
+            TelegramEmergencyPolicy::new(vec![7], Duration::from_secs(60), Duration::from_secs(60))
+                .expect("policy"),
+        );
+        let challenge = session
+            .handle(1, 7, 10, TelegramEmergencyCommand::BeginCloseAll, 1_000)
+            .await
+            .expect("challenge");
+        let nonce = challenge
+            .reply
+            .as_str()
+            .split_whitespace()
+            .last()
+            .expect("nonce")
+            .to_owned();
+        assert_eq!(nonce.len(), 32);
+        assert!(challenge.authorized_command.is_none());
+
+        let wrong_user = session
+            .handle(
+                1,
+                8,
+                11,
+                TelegramEmergencyCommand::ConfirmCloseAll {
+                    nonce: nonce.clone().into_boxed_str(),
+                },
+                1_500,
+            )
+            .await
+            .expect("wrong user rejection");
+        assert!(wrong_user.authorized_command.is_none());
+        let confirmed = session
+            .handle(
+                1,
+                7,
+                12,
+                TelegramEmergencyCommand::ConfirmCloseAll {
+                    nonce: nonce.into_boxed_str(),
+                },
+                1_500,
+            )
+            .await
+            .expect("confirmation");
+        let command = confirmed.authorized_command.expect("authorized command");
+        assert_eq!(
+            command.kind(),
+            EmergencyCommandKind::CloseAllManagedExposure
+        );
+        assert_eq!(command.authorization_subject(), "telegram:user:7:chat:1");
+        assert!(command.is_valid_at(1_500));
+        let replay = session
+            .handle(
+                1,
+                7,
+                13,
+                TelegramEmergencyCommand::ConfirmCloseAll {
+                    nonce: "00000000000000000000000000000000".into(),
+                },
+                1_501,
+            )
+            .await
+            .expect("replay rejection");
+        assert!(replay.authorized_command.is_none());
+
+        let second = session
+            .handle(1, 7, 14, TelegramEmergencyCommand::BeginCloseAll, 2_000)
+            .await
+            .expect("second challenge");
+        let second_nonce = second
+            .reply
+            .as_str()
+            .split_whitespace()
+            .last()
+            .expect("second nonce");
+        let wrong_nonce = session
+            .handle(
+                1,
+                7,
+                15,
+                TelegramEmergencyCommand::ConfirmCloseAll {
+                    nonce: "ffffffffffffffffffffffffffffffff".into(),
+                },
+                2_001,
+            )
+            .await
+            .expect("wrong nonce");
+        assert!(wrong_nonce.authorized_command.is_none());
+        let invalidated = session
+            .handle(
+                1,
+                7,
+                16,
+                TelegramEmergencyCommand::ConfirmCloseAll {
+                    nonce: second_nonce.to_owned().into_boxed_str(),
+                },
+                2_002,
+            )
+            .await
+            .expect("challenge must be consumed");
+        assert!(invalidated.authorized_command.is_none());
+    }
+
+    #[tokio::test]
+    async fn sdk_poll_constructs_only_confirmed_commands_without_business_writes() {
+        let (repository, temp_path) = fixture().await;
+        let session = TelegramEmergencySession::new(
+            TelegramEmergencyPolicy::new(vec![7], Duration::from_secs(60), Duration::from_secs(60))
+                .expect("policy"),
+        );
+        let challenge = session
+            .handle(1, 7, 10, TelegramEmergencyCommand::BeginCloseAll, 1_000)
+            .await
+            .expect("challenge");
+        let nonce = challenge
+            .reply
+            .as_str()
+            .split_whitespace()
+            .last()
+            .expect("nonce");
+        let updates = json!({
+            "ok": true,
+            "result": [
+                telegram_update_from(
+                    11,
+                    1,
+                    7,
+                    &format!("/confirm_emergency_close_all {nonce}")
+                ),
+                telegram_update_from(12, 1, 8, "/emergency_close_all"),
+                telegram_update_from(13, 99, 7, "/emergency_close_all"),
+                telegram_update_from(14, 1, 7, "/help"),
+                telegram_update(15, 1, "/emergency_close_all")
+            ]
+        })
+        .to_string();
+        let send_ok = json!({"ok": true, "result": telegram_message(1, 1, "sent")}).to_string();
+        let (base_url, server) = spawn_http_server(vec![
+            updates,
+            send_ok.clone(),
+            send_ok.clone(),
+            send_ok.clone(),
+            send_ok,
+        ])
+        .await;
+        let adapter = TelegramReadOnlyAdapter::new(
+            TelegramReadOnlyConfig::with_base_url(
+                TOKEN,
+                vec![1],
+                Duration::from_secs(2),
+                &base_url,
+                true,
+            )
+            .expect("config"),
+        )
+        .expect("adapter");
+        let before = business_counts(&repository).await;
+        let report = adapter
+            .poll_once_with_emergency(&repository, &session, Some(11), 1_500)
+            .await
+            .expect("emergency poll");
+        assert_eq!(report.next_offset(), Some(16));
+        assert_eq!(report.received_updates(), 5);
+        assert_eq!(report.emergency_attempts(), 3);
+        assert_eq!(report.replies_sent(), 4);
+        assert_eq!(report.authorized_commands().len(), 1);
+        assert_eq!(
+            report.authorized_commands()[0].authorization_subject(),
+            "telegram:user:7:chat:1"
+        );
+        assert_eq!(
+            business_counts(&repository).await,
+            before,
+            "Telegram confirmation may only construct a command"
+        );
+
+        let requests = server.await.expect("server");
+        assert_eq!(requests.len(), 5);
+        assert!(requests[0].contains(&format!("/bot{TOKEN}/GetUpdates")));
+        let texts = requests[1..]
+            .iter()
+            .map(|request| request_json(request)["text"].as_str().unwrap().to_owned())
+            .collect::<Vec<_>>();
+        assert!(
+            texts
+                .iter()
+                .any(|text| text.contains("confirmation accepted"))
+        );
+        assert!(
+            texts
+                .iter()
+                .any(|text| text.contains("authorization rejected"))
+        );
+        assert_eq!(
+            texts
+                .iter()
+                .filter(|text| text.contains("authorization rejected"))
+                .count(),
+            2
+        );
+        assert!(
+            texts
+                .iter()
+                .any(|text| text.contains("Protected emergency control"))
+        );
+        for request in &requests[1..] {
+            assert_eq!(request_json(request)["protect_content"], true);
+        }
+        repository.close().await;
+        std::fs::remove_dir_all(temp_path).expect("remove Telegram test directory");
     }
 
     #[tokio::test]
@@ -1488,6 +2136,23 @@ mod tests {
         json!({
             "update_id": update_id,
             "message": telegram_message(i32::try_from(update_id).expect("fixture ID fits i32"), chat_id, text)
+        })
+    }
+
+    fn telegram_update_from(update_id: u32, chat_id: i64, user_id: u64, text: &str) -> Value {
+        let mut message = telegram_message(
+            i32::try_from(update_id).expect("fixture ID fits i32"),
+            chat_id,
+            text,
+        );
+        message["from"] = json!({
+            "id": user_id,
+            "is_bot": false,
+            "first_name": "Emergency Operator"
+        });
+        json!({
+            "update_id": update_id,
+            "message": message
         })
     }
 
