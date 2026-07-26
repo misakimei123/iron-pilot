@@ -113,6 +113,23 @@ quant-indicators defaults even though P3-10B calls only three functions. Those
 features are version-pinned and exhaustively listed in `deny.toml`; any
 transitive feature expansion fails the supply-chain gate.
 
+### P3-11 long-running Paper evidence choice
+
+P3-11 introduces no new dependency. The required general infrastructure is
+already provided by reviewed workspace libraries: Tokio for bounded runtime
+behavior, SQLx and bundled SQLite for migrations/append-only transactions,
+sysinfo for targeted current-process RSS/CPU sampling, Serde JSON for bounded
+evidence encoding, SHA-256 for evidence hashes, and exact Decimal for LLM cost
+budgets.
+
+The project-owned implementation is limited to IronPilot-specific soak
+semantics: the frozen 30-day duration, evidence continuity, zero-tolerance
+safety counters, AI-management and Emergency requirements, fault-drill
+qualification, database-growth policy, and restart reconstruction. It adds no
+protocol endpoint, wire DTO, client, polling implementation, retry loop,
+telemetry exporter, database engine, process-metrics backend, or general
+statistics framework.
+
 ## Workspace boundaries
 
 | Crate | Purpose | Allowed inward dependencies |

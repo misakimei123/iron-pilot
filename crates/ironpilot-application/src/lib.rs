@@ -10,6 +10,7 @@ mod emergency;
 mod execution;
 mod execution_validation;
 mod historical_evaluation;
+mod paper_soak;
 mod persistence;
 mod runtime;
 
@@ -58,6 +59,14 @@ pub use historical_evaluation::{
 pub use ironpilot_domain::{
     AI_DECISION_CONTEXT_SCHEMA_VERSION_V1, AI_TRADING_PLAN_SCHEMA_VERSION_V3,
     MARKET_FEATURES_VERSION_V1,
+};
+pub use paper_soak::{
+    MAX_PAPER_SOAK_FAULT_EVIDENCE, MAX_PAPER_SOAK_OBSERVATIONS, PAPER_SOAK_EVIDENCE_VERSION_V1,
+    PAPER_SOAK_MAX_OBSERVATION_GAP_MILLIS, PAPER_SOAK_REQUIRED_DURATION_MILLIS, PaperSoakEvaluator,
+    PaperSoakEvidenceError, PaperSoakFaultEvidence, PaperSoakFaultKind, PaperSoakLimits,
+    PaperSoakLlmEvidence, PaperSoakManifest, PaperSoakObservation, PaperSoakPendingRequirement,
+    PaperSoakQualificationReport, PaperSoakQualificationStatus, PaperSoakResourceEvidence,
+    PaperSoakSafetyCounters, PaperSoakVersions, PaperSoakViolation,
 };
 pub use persistence::{
     AuditEntry, OutboxMessage, PersistedSystemState, SystemStateChange, UnixMillis,

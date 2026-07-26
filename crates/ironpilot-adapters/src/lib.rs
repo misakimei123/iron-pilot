@@ -13,6 +13,7 @@ mod emergency;
 mod historical;
 mod paper_execution;
 mod paper_runtime;
+mod paper_soak;
 mod persistence;
 mod resources;
 mod telegram;
@@ -60,6 +61,10 @@ pub use paper_runtime::{
     PaperRuntimeCycleReport, PaperRuntimeEffect, PaperRuntimeError, PaperRuntimeFacts,
     PaperRuntimeOutcome, PaperRuntimeProviderError, PaperRuntimeProviderFuture,
     RuntimeAiGeneration, SqliteAiPaperRuntime,
+};
+pub use paper_soak::{
+    PaperSoakPersistenceEffect, PaperSoakStorageError, SqliteDatabaseGrowthEvidence,
+    SqlitePaperSoakEvidence,
 };
 pub use persistence::{
     AiTradePlanTraceRow, AuditRow, ExecutionValidationRow, InstanceLease, LeaseAcquireError,
