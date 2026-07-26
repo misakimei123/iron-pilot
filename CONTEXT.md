@@ -1,6 +1,12 @@
 # IronPilot 领域词汇
 
-IronPilot 是 AI 主导交易、确定性事实与可靠执行相结合的自治交易系统。本词汇表统一计划、代码、测试和审计语言；权限边界以 `docs/DEVELOPMENT_PLAN.md` v3 和 ADR-0006 为准。
+IronPilot 是 AI 主导交易、确定性事实与可靠执行相结合的自治交易系统。本词汇表统一计划、代码、测试和审计语言；权限边界以 `docs/DEVELOPMENT_PLAN.md` v3 和 ADR-0006 为准，外部协议 SDK 复用边界以 ADR-0007 为准。
+
+## 工程集成语言
+
+**成熟 SDK 强制复用（Mandatory Mature SDK Reuse）**:
+当外部标准协议已有满足功能、安全、许可证与资源边界的成熟、流行、持续维护 SDK 时，必须直接使用 SDK 的协议方法、类型与解析能力；自有代码只能实现 IronPilot 领域映射和 SDK 未提供的最小安全扩展。
+_Avoid_: 薄封装为名的协议重写、自建 endpoint、wire DTO、响应 envelope、自定义轮询/分页/重试协议
 
 ## 核心交易语言
 

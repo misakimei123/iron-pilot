@@ -2,9 +2,9 @@
 
 > 文档状态：`AUTHORITATIVE`
 >
-> 版本：`3.1.0`
+> 版本：`3.2.0`
 >
-> 日期：2026-07-25
+> 日期：2026-07-26
 >
 > 当前范围：AI 主导的 Bybit Spot Paper Vertical Slice、长期 Paper、完整历史证据与 Testnet Gate
 >
@@ -28,7 +28,7 @@ v3 依据用户在 2026-07-25 的明确确认建立：
 
 1. 用户最新明确确认；
 2. 本文件；
-3. ADR-0006；
+3. ADR-0006 与 ADR-0007；
 4. 与 v3 不冲突的既有 ADR 和实现证据；
 5. v2 修订文档、旧 ADR、`CONTEXT.md` 历史版本和旧计划。
 
@@ -54,7 +54,7 @@ Task 完成不等于 Gate 自动通过。Codex 不得自行批准阶段 Gate，�
 
 1. 确认直接依赖、范围和 v3 权限边界。
 2. 冻结最小接口、不可变量、失败语义和资源上限。
-3. 先评估成熟、流行、持续维护且许可证兼容的开源库；优先复用通用协议与基础设施，只自行实现 IronPilot 领域语义和必要扩展。
+3. 先评估成熟、流行、持续维护且许可证兼容的开源库；只要存在满足当前边界的成熟 SDK，必须直接采用，禁止自行封装或重写同类协议客户端、请求/响应 DTO、响应 envelope、轮询、分页、重试或错误协议逻辑；自有代码只实现 IronPilot 领域语义和 SDK 未提供的最小安全扩展。
 4. 做最小充分实现，不顺手扩展平台能力。
 5. 执行本 Task 的窄范围验收与全仓质量门禁。
 6. 记录测试、审计或运行证据。
@@ -83,6 +83,7 @@ Task 完成不等于 Gate 自动通过。Codex 不得自行批准阶段 Gate，�
 | `2.0.0—2.2.0` | 2026-07-24 | 建立有界 AI Strategy Space、Materializer、Risk、Vertical Slice 优先路线和动态进度分离 |
 | `3.0.0` | 2026-07-25 | 恢复 AI 主导交易初衷；取消活动链中的 Strategy Space 白名单、确定性 Materializer 和后置策略型 Risk Engine；AI 直接输出精确完整交易方案；新增只校验不改写的执行合法性与用户授权边界；重建 P3 Task、依赖图、正文和 Gate |
 | `3.1.0` | 2026-07-25 | 建立开源优先、领域边界自有的工程原则；P3-04 优先采用成熟 OpenAI-compatible Rust 库承载通用客户端与协议能力；同步 Task 正文、质量 Gate 和工程重量限制；Task 表、依赖图、阶段顺序、AI 权限边界和 ADR 词汇不变 |
+| `3.2.0` | 2026-07-26 | 将成熟 SDK 复用提升为硬性工程约束：存在满足边界的成熟流行 SDK 时，绝对禁止自建同类协议客户端及 wire logic；P3-07A 必须由主流 Telegram Rust SDK 承载 Bot API 方法、类型与响应解析；同步完成闭环、Task 正文、Gate、测试证据、工程重量限制、ADR-0007 与词汇；Task 表、依赖图、阶段顺序和 AI 权限边界不变 |
 
 ---
 
@@ -835,6 +836,9 @@ flowchart TD
 #### `P3-07A` Telegram 通知与只读查询
 
 - **范围**：已确认事件、AI 原始计划、Validation 结果、持仓、订单、交易、用户授权与拒绝原因；不实现策略控制。
+- **SDK 约束**：必须采用成熟、流行、持续维护且许可证兼容的 Rust Telegram SDK 承载 Bot API 方法、请求/响应类型、响应解析与 long-poll 协议；禁止项目内自建 `getUpdates`/`sendMessage` 路径、wire DTO、Bot API envelope 或同类协议逻辑。
+- **自有边界**：只保留 chat allowlist、只读命令到 IronPilot 查询的映射、查询/通知上限、领域文本渲染、游标持久化边界和审计语义；不得复制 SDK 已提供的 Telegram 协议能力。
+- **验收**：依赖清单和源码静态断言证明生产代码使用选定 SDK，且不存在自建 Telegram HTTP endpoint、wire envelope/DTO 或通用 Bot API client；SDK 自动重试、遥测与默认行为必须已审计并满足调用预算。
 
 #### `P3-08` Emergency Core
 
@@ -900,6 +904,7 @@ flowchart TD
 | AI Context → Plan → Validation → Order 追溯率 | 100% |
 | 交易所状态未知时同目的盲目补单 | 0 |
 | 未记录例外而自研已有成熟开源实现的通用协议基础设施 | 0 |
+| 存在满足边界的成熟 SDK 时自建协议客户端、wire DTO、响应 envelope 或同类协议逻辑 | 0 |
 
 ### 12.2 Prototype Vertical Slice Gate
 
@@ -970,6 +975,7 @@ flowchart TD
 - Bybit REST/WS fixtures；
 - tickSize、qtyStep、minNotional 和价格限制；
 - DeepSeek raw response/usage/timeout；
+- Telegram SDK `getUpdates`/`sendMessage` 合同、chat allowlist、只读命令和游标；
 - Paper/Bybit port 一致性；
 - REST ack、私有事件和对账。
 
@@ -993,9 +999,10 @@ flowchart TD
 ### 13.5 依赖复用与供应链
 
 - 每个新增通用基础设施实现先记录候选开源库比较，包括维护活跃度、社区采用、许可证、安全、资源重量、可审计性和边界适配；
+- 存在满足边界的成熟、流行、持续维护且许可证兼容 SDK 时必须采用；禁止以“薄封装”“依赖较少”“便于测试”为由重新实现 SDK 已提供的协议方法、路径、wire DTO、响应 envelope、轮询、分页、重试或错误协议；
 - 版本锁定并执行格式、静态检查、测试、`cargo deny check` 和依赖来源审计；
-- Provider SDK 的自动重试、遥测或请求改写必须显式配置并纳入调用预算和审计证据；
-- 只有在成熟库缺失必要能力、无法满足安全/证据语义或引入重量明显不合算时才允许自研，并在 `docs/PROGRESS.md` 记录理由、边界和测试证据。
+- 外部 SDK 的自动重试、遥测、默认超时、请求改写、分页或游标语义必须显式审计，并纳入调用预算和证据；
+- 若候选 SDK 全部缺失必要能力或违反安全/证据语义，必须先取得用户明确授权并独立修订本计划，才能实现最小替代；不得仅在 `docs/PROGRESS.md` 记录理由后自行决定自研。
 
 ---
 
@@ -1036,8 +1043,8 @@ flowchart TD
 
 - 保持模块化单体和 SQLite。
 - 不因 AI 主导引入 Agent 工具、MCP 执行、通用 DSL 或多模型平台。
-- 开源优先不是无条件增加依赖：优先选择成熟、流行、持续维护、许可证兼容且边界清晰的最小库，避免引入覆盖面远大于当前 Task 的框架。
-- HTTP、TLS、WebSocket、序列化、标准 Provider 协议、数据库、迁移、指标和重试等通用基础设施，原则上复用成熟开源库，不重复造轮子。
+- 在满足同一协议与安全边界的候选中，选择成熟、流行、持续维护、许可证兼容且边界清晰的最小 SDK，避免引入覆盖面远大于当前 Task 的完整框架。
+- HTTP、TLS、WebSocket、序列化、Telegram/Provider/交易所标准协议、数据库、迁移、指标和重试等通用基础设施必须复用成熟开源库；存在合适 SDK 时绝对禁止重复实现一套协议逻辑。
 - 自有代码聚焦 IronPilot 领域合同、AI 权限边界、Prompt、严格解析、预算、证据、幂等、恢复和 Provider 必要扩展。
 - 开源库不得隐藏改变语义：自动重试、默认超时、请求改写、数据外发和遥测必须可关闭、可配置、可审计。
 - Context 和 Prompt 有明确字节/Token 上限。
