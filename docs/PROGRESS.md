@@ -20,12 +20,12 @@
 ## Current Focus
 
 - Current phase: Phase E — Parallel Hardening
-- In progress: P3-10B Full Historical Strategy Evaluation
+- In progress: None
 - Ready:
   - P3-11
   - P4-01
 - Blocked: None
-- Next recommended task: complete P3-10B while P3-11 and P4-01 remain independently READY
+- Next recommended task: P3-11 Long-running Paper Safety; P4-01 remains independently READY
 
 ## Task Status
 
@@ -58,7 +58,7 @@
 | `P3-08` | `DONE` | 2026-07-26 | 2026-07-26 | `a4545a2e527744298565a58bef6c320a9f3ced70` | `ironpilot-emergency-core-v1`；统一授权命令、5 分钟 TTL、幂等 hash；项目归属订单撤销；受管仓位部分减仓、重启恢复与 append-only 证据；4 项专项测试；141 项全工作区测试及全部质量门禁 | 完成后保持 `HALTED` 且不自动恢复入场；无 AI/Telegram 依赖；未知资产卖出为 0；未批准任何阶段 Gate |
 | `P3-07B` | `DONE` | 2026-07-26 | 2026-07-26 | `1c68737b78669e9c4cd42c129f465e1eceaf025b` | `ironpilot-telegram-emergency-v1`；SDK chat/user 身份、UUID v4 nonce、二次确认、TTL、一次性消费与统一 Emergency Command；6 项 Telegram 专项测试；143 项全工作区测试及全部质量门禁 | 只构造授权命令，直接交易写入为 0；重启使未确认 challenge fail closed；未批准任何阶段 Gate |
 | `P3-VS` | `DONE` | 2026-07-26 | 2026-07-26 | `919d77b0d67573a0a60729bae12fbf2f16ac3d72` | Repository evidence matrix；143 项测试；用户于 2026-07-26 明确接受证据并批准 Gate | 用户明确决定先不执行线上 DeepSeek/Telegram smoke；不授权 Testnet 写、实盘、永续或新闻能力 |
-| `P3-10B` | `IN_PROGRESS` | 2026-07-26 | — | — | — | P3-VS 已由用户批准 |
+| `P3-10B` | `DONE` | 2026-07-26 | 2026-07-26 | `d4f732624574758a8972674ac7e19b9a5eef4860` | `docs/FULL_HISTORICAL_STRATEGY_EVALUATION_V1.md`; 3 targeted tests; 146 workspace tests | Offline-only evaluation; Rule-only is not production eligible; no stage Gate approved |
 | `P3-11` | `READY` | — | — | — | — | P3-VS 已由用户批准 |
 | `P4-01` | `READY` | — | — | — | — | P3-VS、P2-02 与 P3-01 均已完成 |
 | `P4-02A` | `PLANNED` | — | — | — | — | — |
@@ -294,11 +294,22 @@ None.
 - 本次门禁：全工作区 143 项测试通过、0 失败，1 项依赖外网的 Bybit 公共 WSS 只读 smoke 保持显式忽略；`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo build --workspace --all-targets --locked`、`cargo metadata --locked --no-deps`、cargo-deny advisories/bans/licenses/sources、Gitleaks 63 个 Git commits 与 `crates/`/`docs/` 源码扫描全部通过；`docs/DEVELOPMENT_PLAN.md` 零差异。
 - 权限边界：本证据不授权 Testnet 写、实盘、永续或新闻能力；没有运行任何交易所写请求。
 
+### P3-10B — Full Historical Strategy Evaluation
+
+- Result: implemented the versioned `ironpilot-full-historical-evaluation-v1` offline evaluator for the exact Rule-only Baseline, Deterministic AI Plan Stub, and recorded AI Trading Plan arms. Every comparison binds the same market facts, user maximum loss, decision/settlement cutoffs, execution model, fees, and slippage.
+- Immutable evidence: the manifest binds dataset, Context schema, Prompt, Model, deterministic stub plan set, recorded AI plan set, Validator, Execution, matcher, metric library, time split, costs, and stress scenarios. Records additionally bind market-fact, plan, and execution-evidence hashes.
+- Mature-library reuse: standard total return, maximum drawdown, and expectancy calculations delegate to `quant-metrics 0.7.0` with exact Decimal adapters. Candidate review and the deliberately narrow dependency choice are recorded in `docs/DEPENDENCIES.md`; project code retains only comparison/evidence orchestration and exact quote-amount reporting.
+- Report: full-sample and out-of-sample return, drawdown, expectancy, trade count, costs, rejection reasons, AI contribution, stress results, per-trade differences, and independent reference tie-out are deterministic and canonically hashed.
+- Fail closed: future facts, missing or incomparable arms, local AI-plan mutation, missing provenance, safety failures, or independent-reference mismatch reject the evaluation. Profitable outcomes cannot offset a safety failure.
+- Boundary: this is offline evaluation only. Rule-only output cannot enter production, and no exchange/model call, Materializer, strategy-style Risk Engine, news node, or composition-root production wiring was added.
+- Implementation commit: `d4f732624574758a8972674ac7e19b9a5eef4860`.
+- Gates: 3 targeted historical-evaluation tests passed; the full workspace passed 146 tests with 0 failures and 1 explicitly ignored live Bybit public-WSS smoke. Formatting, strict Clippy, locked build/test/metadata, cargo-deny advisories/bans/licenses/sources, Gitleaks history plus `crates/` and `docs/`, boundary checks, and `git diff --check` passed. `docs/DEVELOPMENT_PLAN.md` remained unchanged.
+- Gate authority: this completion does not approve any new stage Gate.
+
 ## Next Action
 
-Implement P3-10B Full Historical Strategy Evaluation next. P3-11 and P4-01 are
-also READY after the approved P3-VS Gate, but remain untouched while P3-10B is
-the active task.
+P3-11 Long-running Paper Safety is the next recommended task. P4-01 remains
+independently READY. Neither task has been started by this completion update.
 
 以上内容是依据 `docs/DEVELOPMENT_PLAN.md` 静态依赖生成的进度建议，不改变任何 Task 依赖。
 
