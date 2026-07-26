@@ -22,9 +22,9 @@
 - Current phase: Phase C — AI-Dominant Paper
 - In progress: None
 - Ready:
-  - P3-08
+  - P3-07B
 - Blocked: None
-- Next recommended task: P3-08
+- Next recommended task: P3-07B
 
 ## Task Status
 
@@ -54,8 +54,8 @@
 | `P3-10A` | `DONE` | 2026-07-26 | 2026-07-26 | `5f8b097220e94caed14ba74d1513410819370e14` | `ironpilot-minimal-historical-harness-v1`；确定性/前缀不变/无前视 2 项专项测试；127 项全工作区测试及全部质量门禁 | 不调用实时 LLM，不包含 Materializer/Risk Engine，不构建完整绩效平台；未批准任何阶段 Gate |
 | `P3-06` | `DONE` | 2026-07-26 | 2026-07-26 | `f5a7bc061b06b1be471ab57eda740595d7f361d6` | `ironpilot-ai-paper-runtime-v1`；Runtime Prompt v2；append-only cycle trace；6 项专项测试；133 项全工作区测试及全部质量门禁 | 本地生成或改写交易参数次数为 0；主链无新闻、Materializer 或策略型 Risk Engine；未批准任何阶段 Gate |
 | `P3-07A` | `DONE` | 2026-07-26 | 2026-07-26 | `290512c6ce0fdcb1119e3f847f654eeed0bbec00`；`2eccccea75d68647eadce3291d49d005ff393c8d` | `ironpilot-telegram-readonly-v1`；`teloxide-core 0.13.0` SDK；完整只读查询面；4 项专项测试；137 项全工作区测试及全部质量门禁 | DEVELOPMENT_PLAN v3.2.0 开源 SDK 强制复用纠正；生产路径 SQL 写入为 0；无策略或紧急控制命令；未批准任何阶段 Gate |
-| `P3-08` | `READY` | — | — | — | — | P3-01、P3-03 与 P3-05 完成后依赖已满足 |
-| `P3-07B` | `PLANNED` | — | — | — | — | — |
+| `P3-08` | `DONE` | 2026-07-26 | 2026-07-26 | `a4545a2e527744298565a58bef6c320a9f3ced70` | `ironpilot-emergency-core-v1`；统一授权命令、5 分钟 TTL、幂等 hash；项目归属订单撤销；受管仓位部分减仓、重启恢复与 append-only 证据；4 项专项测试；141 项全工作区测试及全部质量门禁 | 完成后保持 `HALTED` 且不自动恢复入场；无 AI/Telegram 依赖；未知资产卖出为 0；未批准任何阶段 Gate |
+| `P3-07B` | `READY` | — | — | — | — | P3-07A 与 P3-08 均已完成，依赖已满足 |
 | `P3-VS` | `PLANNED` | — | — | — | — | — |
 | `P3-10B` | `PLANNED` | — | — | — | — | — |
 | `P3-11` | `PLANNED` | — | — | — | — | — |
@@ -259,9 +259,19 @@ None.
 - 门禁：4 项专项测试覆盖配置/chat allowlist、全部只读查询面与拒绝原因、4,096 字符截断、SDK `getUpdates`/`sendMessage` 请求合同、long-poll offset、非白名单隔离、控制命令拒绝、已确认事件双 chat 通知、查询前后业务表零变化、SDK invalid/rejected response fail closed 和 token 不泄漏；全工作区 137 项测试通过、0 失败，1 项既有 Bybit 线上 WSS 只读测试保持显式忽略；`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo test --workspace --all-targets --locked`、`cargo build --workspace --all-targets --locked`、`cargo metadata --locked --no-deps`、cargo-deny advisories/bans/licenses/sources、Gitleaks Git 历史与源码工作树扫描、SDK 使用/无自建 wire DTO/无自建 HTTP POST/生产 SQL 零写入/无控制命令/完整查询面静态断言和 `git diff --check` 全部通过；`docs/DEVELOPMENT_PLAN.md` 零差异。
 - 已知限制：Telegram `sendMessage` 没有应用幂等键，远端接受后、caller cursor 持久化前崩溃可能重复通知，因此明确采用 at-least-once 而非网络 exactly-once 语义；`teloxide-core 0.13.0` 当前依赖 Reqwest 0.12，而现有 adapter/`async-openai` 使用 Reqwest 0.13，必要重复版本已在 `deny.toml` 精确审计；SDK response decoder 不提供项目级 body byte cap。门禁使用本地 HTTP 协议服务，不使用真实 Bot token 或调用线上 Telegram；Emergency 业务与受保护 Telegram Emergency adapter 分别由 P3-08、P3-07B 实现；不授权 Testnet/Live 写入，也不批准 `P3-VS` 或任何阶段 Gate。
 
+### P3-08 — Emergency Core
+
+- 结果：实现 `ironpilot-emergency-command-v1` 与 `ironpilot-emergency-core-v1`。统一 `AuthorizedEmergencyCommand` 绑定稳定 action ID、授权主体、授权证据 hash、独立确认 nonce hash、半开有效期、5 分钟硬 TTL、canonical payload 与 SHA-256 幂等 hash；原始凭证和 nonce 不落库。同 action ID 异内容 fail closed；新过期命令零业务写入；已持久化命令允许在 TTL 后继续恢复。
+- 安全执行：控制器持有有效 runtime lease 后将系统强制保持 `HALTED`，按 `REQUESTED → ENTRY_DISABLED → ORDERS_CANCELLED → EXPOSURE_REDUCING → COMPLETED` 单调持久化；只撤销存在 `paper_order_specs` 归属证据的活动订单，只消费 `managed_lots` 可证明数量，未知/非受管资产卖出为 0。缺失、过期、future、decision-fact 复用或每批超过 3 个行情 observation 时不猜测价格、不盲目替代；完成后不自动恢复 AI 入场。
+- 恢复与证据：新增 `emergency_action_steps` 与 `emergency_fills`，两者由 SQLite trigger 禁止 UPDATE/DELETE；每个 action/plan/observation 的紧急成交具备稳定 ID 与唯一约束。部分流动性会进入 `EXPOSURE_REDUCING`，新 controller 实例可从数据库继续；同命令与同 observation 重放的业务成交、减仓和订单效果均为 0。
+- 开源复用评估：P3-08 是 IronPilot 内部领域/持久化编排，不新增外部协议。实现直接复用既有成熟开源 Tokio、SQLx、SQLite、SHA-256、UUID、Serde JSON、精确 Decimal，以及项目共享 `PaperMatchingEngine`/`PaperExecutionPolicy`；依赖清单零变化，未自建协议 client、wire DTO、envelope、轮询、分页或重试逻辑。未来真实 venue adapter 仍须遵守 DEVELOPMENT_PLAN v3.2.0 的成熟 SDK 强制复用规则。
+- Commit：`a4545a2e527744298565a58bef6c320a9f3ced70`。
+- 门禁：4 项专项测试覆盖命令 TTL/双证据/canonical hash、项目归属订单隔离、部分减仓与重启续跑、TTL 后恢复、重复 observation 零业务效果、同 ID 异内容冲突、完成后保持 `HALTED` 及紧急步骤/成交不可篡改；全工作区 141 项测试通过、0 失败，1 项既有 Bybit 线上 WSS 只读测试保持显式忽略；`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo test --workspace --all-targets --locked`、`cargo build --workspace --all-targets --locked`、`cargo metadata --locked --no-deps`、cargo-deny advisories/bans/licenses/sources、Gitleaks 59 个 Git commits 与 `crates/`/`docs/` 源码扫描、共享 matcher 复用/无协议依赖/依赖清单零变化静态断言和 `git diff --check` 全部通过；`docs/DEVELOPMENT_PLAN.md` 零差异，未批准 `P3-VS` 或任何阶段 Gate。
+
 ## Next Action
 
-Execute P3-08 next. P3-07B remains PLANNED until both P3-07A and P3-08 are complete.
+Execute P3-07B next. P3-07A and P3-08 are complete, so the protected Telegram
+Emergency adapter dependency is now satisfied.
 
 以上内容是依据 `docs/DEVELOPMENT_PLAN.md` 静态依赖生成的进度建议，不改变任何 Task 依赖。
 
