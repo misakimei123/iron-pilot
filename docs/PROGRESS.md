@@ -4,9 +4,9 @@
 >
 > This file is the single source of truth for current implementation progress.
 >
-> Plan baseline: DEVELOPMENT_PLAN v3.1.0
+> Plan baseline: DEVELOPMENT_PLAN v3.2.0
 >
-> Plan commit: `d39229b4f734d77c280bb3a8e614b5f9df8ff358`
+> Plan commit: `90d01665939456e5a68210be16187ddec927d14f`
 >
 > Last updated: 2026-07-26
 
@@ -53,7 +53,7 @@
 | `P3-05` | `DONE` | 2026-07-26 | 2026-07-26 | `e05918fc57a3b51f9b94d6d42cc1a9b05e1ab7b9` | `ironpilot-spot-execution-v1`；共享 port；精确订单映射；部分成交/费用/滑点/保护单/ManagedLot；4 项专项测试；125 项全工作区测试及全部质量门禁 | 未修改开发计划；未批准任何阶段 Gate |
 | `P3-10A` | `DONE` | 2026-07-26 | 2026-07-26 | `5f8b097220e94caed14ba74d1513410819370e14` | `ironpilot-minimal-historical-harness-v1`；确定性/前缀不变/无前视 2 项专项测试；127 项全工作区测试及全部质量门禁 | 不调用实时 LLM，不包含 Materializer/Risk Engine，不构建完整绩效平台；未批准任何阶段 Gate |
 | `P3-06` | `DONE` | 2026-07-26 | 2026-07-26 | `f5a7bc061b06b1be471ab57eda740595d7f361d6` | `ironpilot-ai-paper-runtime-v1`；Runtime Prompt v2；append-only cycle trace；6 项专项测试；133 项全工作区测试及全部质量门禁 | 本地生成或改写交易参数次数为 0；主链无新闻、Materializer 或策略型 Risk Engine；未批准任何阶段 Gate |
-| `P3-07A` | `DONE` | 2026-07-26 | 2026-07-26 | `290512c6ce0fdcb1119e3f847f654eeed0bbec00` | `ironpilot-telegram-readonly-v1`；官方 Bot API long poll/sendMessage；完整只读查询面；4 项专项测试；137 项全工作区测试及全部质量门禁 | 生产路径 SQL 写入为 0；无策略或紧急控制命令；未批准任何阶段 Gate |
+| `P3-07A` | `DONE` | 2026-07-26 | 2026-07-26 | `290512c6ce0fdcb1119e3f847f654eeed0bbec00`；`2eccccea75d68647eadce3291d49d005ff393c8d` | `ironpilot-telegram-readonly-v1`；`teloxide-core 0.13.0` SDK；完整只读查询面；4 项专项测试；137 项全工作区测试及全部质量门禁 | DEVELOPMENT_PLAN v3.2.0 开源 SDK 强制复用纠正；生产路径 SQL 写入为 0；无策略或紧急控制命令；未批准任何阶段 Gate |
 | `P3-08` | `READY` | — | — | — | — | P3-01、P3-03 与 P3-05 完成后依赖已满足 |
 | `P3-07B` | `PLANNED` | — | — | — | — | — |
 | `P3-VS` | `PLANNED` | — | — | — | — | — |
@@ -250,12 +250,14 @@ None.
 
 ### P3-07A — Telegram 通知与只读查询
 
-- 结果：实现版本化 `ironpilot-telegram-readonly-v1` Telegram adapter，以严格只读命令提供 runtime 状态、append-only 已确认审计事件、AI plan 摘要与录制的原始 AI plan、Execution Validation outcome/evidence/拒绝原因、受管持仓、Paper 订单、成交和最新用户最大亏损授权。查询行数、更新批次、通知批次、HTTP response body 和 Telegram 文本均有硬上限；生产查询路径只执行 `SELECT`，不写 audit、TradePlan、Action、OrderIntent、Fill 或 ManagedLot。
-- 协议与安全：按 Telegram 官方 Bot API 使用正数 timeout 的 `getUpdates` long poll、严格递增 update ID 和 `highest update_id + 1` caller cursor，并用 `sendMessage` plain text 与 `protect_content=true` 回复。入站命令和出站通知均受最多 8 个 chat 的 allowlist 约束；非消息、普通文本和非白名单 chat 不回复。Bot token 只从 `IRONPILOT_TELEGRAM_BOT_TOKEN` 或 secret-bearing 构造器进入，未进入 YAML/响应/错误；生产 origin 固定为官方 HTTPS，禁用 redirect 并在解码前限制响应大小。
+- 结果：按 DEVELOPMENT_PLAN v3.2.0 和 ADR-0007 完成纠正重构。`teloxide-core 0.13.0` 的 `Bot`、`Requester::get_updates`、`Requester::send_message`、Telegram Update/Message 类型和 SDK response decoder 承载 Bot API 协议；删除项目内自建 endpoint、wire DTO、response envelope、通用 HTTP POST 和协议 JSON 解码。IronPilot 代码只保留 chat allowlist、只读命令映射、SQLite 查询、领域文本、批次上限及 cursor/audit 边界。
+- 选型证据：2026-07-26 比较 `teloxide-core 0.13.0`、完整 `teloxide 0.17.0` 与 `frankenstein 0.50.2`。`teloxide` 项目 MIT 许可、持续维护、约 4.2k GitHub stars 且 README 列示 2500+ 公开使用仓库；core crate 提供当前 Task 所需 Bot API client 而不引入 Dispatcher/Dialog/macros。`frankenstein` 持续维护但为 WTFPL，不在项目许可证 allowlist；完整 `teloxide` 覆盖面超过只读 adapter。最终锁定最小 `teloxide-core`，仅启用 `rustls`。
+- SDK 默认行为审计：未启用 `throttle`、`trace_adaptor`、`cache_me` 或 `erased`，SDK 不执行自动重试或遥测；SDK 对 HTTP 5xx 有固定延迟但不重试，IronPilot 用外层 Tokio timeout 把整个 SDK 调用限制在配置的 2—30 秒预算内；自定义 Reqwest 0.12 client 禁止 redirect。`cargo-deny` 对 SDK 新增默认 features 与必要重复版本逐项精确锁定并记录原因。
+- 协议与安全：SDK 发出正数 timeout 的 `getUpdates` long poll，adapter 校验严格递增 update ID 并使用 `highest update_id + 1` caller cursor；`sendMessage` 使用 plain text 与 `protect_content=true`。入站命令和出站通知均受最多 8 个 chat 的 allowlist 约束；非消息、普通文本和非白名单 chat 不回复。Bot token 只从 `IRONPILOT_TELEGRAM_BOT_TOKEN` 或 secret-bearing 构造器进入，未进入 YAML、响应或错误；生产 origin 固定为官方 HTTPS。更新批次 32、查询行数 20、通知批次 32、Telegram 文本 4,096 字符；SDK 不暴露 response-body byte cap，因此先前“项目在 SDK 解码前限制 256 KiB”的证据已撤销，不再作为验收声明。
 - 通知与权限边界：通知只从已提交且数据库级 append-only 的 `audit_log` 构造；调用方仅在整批成功后推进 audit sequence。命令枚举不包含 Pause、Resume、Cancel、Emergency、OPEN_LONG 或 EXIT，未知控制命令只返回只读边界说明，重复查询/通知的交易业务效果为 0。
-- Commit：`290512c6ce0fdcb1119e3f847f654eeed0bbec00`。
-- 门禁：4 项专项测试覆盖配置/chat allowlist、全部只读查询面与拒绝原因、4,096 字符截断、官方请求字段、long-poll offset、非白名单隔离、控制命令拒绝、已确认事件双 chat 通知、查询前后业务表零变化、超大/远端拒绝 response fail closed 和 token 不泄漏；全工作区 137 项测试通过、0 失败，1 项既有 Bybit 线上 WSS 只读测试保持显式忽略；`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo test --workspace --all-targets --locked`、`cargo build --workspace --all-targets --locked`、`cargo metadata --locked --no-deps`、cargo-deny 0.19.4 advisories/bans/licenses/sources、Gitleaks 55 提交历史与源码工作树扫描、生产 SQL 零写入/无控制命令/完整查询面静态断言和 `git diff --check` 全部通过；`docs/DEVELOPMENT_PLAN.md` 零差异。
-- 已知限制：Telegram `sendMessage` 没有应用幂等键，远端接受后、caller cursor 持久化前崩溃可能重复通知，因此明确采用 at-least-once 而非网络 exactly-once 语义；门禁使用本地 HTTP 协议服务，不使用真实 Bot token 或调用线上 Telegram；Emergency 业务与受保护 Telegram Emergency adapter 分别由 P3-08、P3-07B 实现；不授权 Testnet/Live 写入，也不批准 `P3-VS` 或任何阶段 Gate。
+- Commit：原始实现 `290512c6ce0fdcb1119e3f847f654eeed0bbec00`；DEVELOPMENT_PLAN v3.2.0 与 ADR-0007 `90d01665939456e5a68210be16187ddec927d14f`；SDK 重构 `2eccccea75d68647eadce3291d49d005ff393c8d`。
+- 门禁：4 项专项测试覆盖配置/chat allowlist、全部只读查询面与拒绝原因、4,096 字符截断、SDK `getUpdates`/`sendMessage` 请求合同、long-poll offset、非白名单隔离、控制命令拒绝、已确认事件双 chat 通知、查询前后业务表零变化、SDK invalid/rejected response fail closed 和 token 不泄漏；全工作区 137 项测试通过、0 失败，1 项既有 Bybit 线上 WSS 只读测试保持显式忽略；`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo test --workspace --all-targets --locked`、`cargo build --workspace --all-targets --locked`、`cargo metadata --locked --no-deps`、cargo-deny advisories/bans/licenses/sources、Gitleaks Git 历史与源码工作树扫描、SDK 使用/无自建 wire DTO/无自建 HTTP POST/生产 SQL 零写入/无控制命令/完整查询面静态断言和 `git diff --check` 全部通过；`docs/DEVELOPMENT_PLAN.md` 零差异。
+- 已知限制：Telegram `sendMessage` 没有应用幂等键，远端接受后、caller cursor 持久化前崩溃可能重复通知，因此明确采用 at-least-once 而非网络 exactly-once 语义；`teloxide-core 0.13.0` 当前依赖 Reqwest 0.12，而现有 adapter/`async-openai` 使用 Reqwest 0.13，必要重复版本已在 `deny.toml` 精确审计；SDK response decoder 不提供项目级 body byte cap。门禁使用本地 HTTP 协议服务，不使用真实 Bot token 或调用线上 Telegram；Emergency 业务与受保护 Telegram Emergency adapter 分别由 P3-08、P3-07B 实现；不授权 Testnet/Live 写入，也不批准 `P3-VS` 或任何阶段 Gate。
 
 ## Next Action
 
