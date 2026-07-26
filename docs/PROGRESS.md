@@ -22,10 +22,9 @@
 - Current phase: Phase C — AI-Dominant Paper
 - In progress: None
 - Ready:
-  - P3-07A
   - P3-08
 - Blocked: None
-- Next recommended task: P3-07A
+- Next recommended task: P3-08
 
 ## Task Status
 
@@ -54,7 +53,7 @@
 | `P3-05` | `DONE` | 2026-07-26 | 2026-07-26 | `e05918fc57a3b51f9b94d6d42cc1a9b05e1ab7b9` | `ironpilot-spot-execution-v1`；共享 port；精确订单映射；部分成交/费用/滑点/保护单/ManagedLot；4 项专项测试；125 项全工作区测试及全部质量门禁 | 未修改开发计划；未批准任何阶段 Gate |
 | `P3-10A` | `DONE` | 2026-07-26 | 2026-07-26 | `5f8b097220e94caed14ba74d1513410819370e14` | `ironpilot-minimal-historical-harness-v1`；确定性/前缀不变/无前视 2 项专项测试；127 项全工作区测试及全部质量门禁 | 不调用实时 LLM，不包含 Materializer/Risk Engine，不构建完整绩效平台；未批准任何阶段 Gate |
 | `P3-06` | `DONE` | 2026-07-26 | 2026-07-26 | `f5a7bc061b06b1be471ab57eda740595d7f361d6` | `ironpilot-ai-paper-runtime-v1`；Runtime Prompt v2；append-only cycle trace；6 项专项测试；133 项全工作区测试及全部质量门禁 | 本地生成或改写交易参数次数为 0；主链无新闻、Materializer 或策略型 Risk Engine；未批准任何阶段 Gate |
-| `P3-07A` | `READY` | — | — | — | — | P1-05 与 P3-03 完成后依赖已满足 |
+| `P3-07A` | `DONE` | 2026-07-26 | 2026-07-26 | `290512c6ce0fdcb1119e3f847f654eeed0bbec00` | `ironpilot-telegram-readonly-v1`；官方 Bot API long poll/sendMessage；完整只读查询面；4 项专项测试；137 项全工作区测试及全部质量门禁 | 生产路径 SQL 写入为 0；无策略或紧急控制命令；未批准任何阶段 Gate |
 | `P3-08` | `READY` | — | — | — | — | P3-01、P3-03 与 P3-05 完成后依赖已满足 |
 | `P3-07B` | `PLANNED` | — | — | — | — | — |
 | `P3-VS` | `PLANNED` | — | — | — | — | — |
@@ -249,9 +248,18 @@ None.
 - 门禁：3 项 Runtime Prompt/真实 provider request 测试与 3 项 SQLite Paper Runtime 测试覆盖活动计划目标与原始方案输入、Prompt v1 兼容、跨标的状态拒绝、多标的隔离、预算耗尽、AI 无效方案、超授权后一次 replan、陈旧数据、Context 后订单变化、持仓复评退出、部分成交、完整/未完成重启和零重复订单；全工作区 133 项测试通过、0 失败，1 项既有 Bybit 线上 WSS 只读测试保持显式忽略；`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo test --workspace --all-targets --locked`、`cargo build --workspace --all-targets --locked`、`cargo metadata --locked --no-deps`、cargo-deny 0.19.4 advisories/bans/licenses/sources、Gitleaks 53 提交历史与源码工作树扫描、AI 参数零本地改写/完整追溯/无新闻 Materializer Risk Engine 静态断言和 `git diff --check` 全部通过；`docs/DEVELOPMENT_PLAN.md` 零差异。
 - 已知限制：本 Task 运行有界 Paper decision cycle，长期调度、完整历史评估和长时间 Paper 安全分别由后续 Task 承担；确定性门禁使用录制 provider 或本地 HTTP 协议服务，不消耗真实 DeepSeek API；不授权 Testnet/Live 写入，也不批准 `P3-VS` 或任何阶段 Gate。
 
+### P3-07A — Telegram 通知与只读查询
+
+- 结果：实现版本化 `ironpilot-telegram-readonly-v1` Telegram adapter，以严格只读命令提供 runtime 状态、append-only 已确认审计事件、AI plan 摘要与录制的原始 AI plan、Execution Validation outcome/evidence/拒绝原因、受管持仓、Paper 订单、成交和最新用户最大亏损授权。查询行数、更新批次、通知批次、HTTP response body 和 Telegram 文本均有硬上限；生产查询路径只执行 `SELECT`，不写 audit、TradePlan、Action、OrderIntent、Fill 或 ManagedLot。
+- 协议与安全：按 Telegram 官方 Bot API 使用正数 timeout 的 `getUpdates` long poll、严格递增 update ID 和 `highest update_id + 1` caller cursor，并用 `sendMessage` plain text 与 `protect_content=true` 回复。入站命令和出站通知均受最多 8 个 chat 的 allowlist 约束；非消息、普通文本和非白名单 chat 不回复。Bot token 只从 `IRONPILOT_TELEGRAM_BOT_TOKEN` 或 secret-bearing 构造器进入，未进入 YAML/响应/错误；生产 origin 固定为官方 HTTPS，禁用 redirect 并在解码前限制响应大小。
+- 通知与权限边界：通知只从已提交且数据库级 append-only 的 `audit_log` 构造；调用方仅在整批成功后推进 audit sequence。命令枚举不包含 Pause、Resume、Cancel、Emergency、OPEN_LONG 或 EXIT，未知控制命令只返回只读边界说明，重复查询/通知的交易业务效果为 0。
+- Commit：`290512c6ce0fdcb1119e3f847f654eeed0bbec00`。
+- 门禁：4 项专项测试覆盖配置/chat allowlist、全部只读查询面与拒绝原因、4,096 字符截断、官方请求字段、long-poll offset、非白名单隔离、控制命令拒绝、已确认事件双 chat 通知、查询前后业务表零变化、超大/远端拒绝 response fail closed 和 token 不泄漏；全工作区 137 项测试通过、0 失败，1 项既有 Bybit 线上 WSS 只读测试保持显式忽略；`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo test --workspace --all-targets --locked`、`cargo build --workspace --all-targets --locked`、`cargo metadata --locked --no-deps`、cargo-deny 0.19.4 advisories/bans/licenses/sources、Gitleaks 55 提交历史与源码工作树扫描、生产 SQL 零写入/无控制命令/完整查询面静态断言和 `git diff --check` 全部通过；`docs/DEVELOPMENT_PLAN.md` 零差异。
+- 已知限制：Telegram `sendMessage` 没有应用幂等键，远端接受后、caller cursor 持久化前崩溃可能重复通知，因此明确采用 at-least-once 而非网络 exactly-once 语义；门禁使用本地 HTTP 协议服务，不使用真实 Bot token 或调用线上 Telegram；Emergency 业务与受保护 Telegram Emergency adapter 分别由 P3-08、P3-07B 实现；不授权 Testnet/Live 写入，也不批准 `P3-VS` 或任何阶段 Gate。
+
 ## Next Action
 
-Execute P3-07A next. P3-08 is also READY and remains independent until downstream dependencies converge.
+Execute P3-08 next. P3-07B remains PLANNED until both P3-07A and P3-08 are complete.
 
 以上内容是依据 `docs/DEVELOPMENT_PLAN.md` 静态依赖生成的进度建议，不改变任何 Task 依赖。
 
