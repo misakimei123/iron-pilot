@@ -8,7 +8,7 @@
 >
 > Plan commit: `d39229b4f734d77c280bb3a8e614b5f9df8ff358`
 >
-> Last updated: 2026-07-25
+> Last updated: 2026-07-26
 
 ## Document Boundary
 
@@ -22,10 +22,12 @@
 - Current phase: Phase C — AI-Dominant Paper
 - In progress: None
 - Ready:
-  - P3-05
+  - P3-10A
+  - P3-06
   - P3-07A
+  - P3-08
 - Blocked: None
-- Next recommended task: P3-05
+- Next recommended task: P3-10A
 
 ## Task Status
 
@@ -51,11 +53,11 @@
 | `P3-03` | `DONE` | 2026-07-25 | 2026-07-25 | `e093bc8c11d7a9927450b6be652eb26eab4c2dd8` | 完整事实 Context/稳定 hash；原始响应与 AI Plan provenance；原子 TradePlan Ledger；8 项专项测试与全量门禁 | 未修改开发计划；未批准任何阶段 Gate |
 | `P3-04` | `DONE` | 2026-07-25 | 2026-07-25 | `98f30dddf68ab8fc88c522d9a24e1c2c123da3c7`；`7928509ddad5ff65e8ab4e8540db86b0d6cc00c6` | Prompt v1；`async-openai` DeepSeek client；strict parse；usage/cost/latency；预算；一次 replan；原始证据；13 项专项测试与全量门禁 | v3.1.0 开源优先重构；未批准任何阶段 Gate；确定性门禁不调用线上 DeepSeek |
 | `P3-13` | `DONE` | 2026-07-26 | 2026-07-26 | `86203e92147acfd5671b158fd1edf546685a9347` | `ironpilot-execution-validator-v1`；完整兼容性/授权/最大亏损校验；原子 validation ledger；8 项专项持久化与领域测试；121 项全工作区测试及全部质量门禁 | 只返回 ACCEPT/REJECT，未修改 AI 方案或生成订单；未批准任何阶段 Gate |
-| `P3-05` | `READY` | — | — | — | — | P3-03 与 P3-13 完成后依赖已满足 |
-| `P3-10A` | `PLANNED` | — | — | — | — | — |
-| `P3-06` | `PLANNED` | — | — | — | — | — |
+| `P3-05` | `DONE` | 2026-07-26 | 2026-07-26 | `e05918fc57a3b51f9b94d6d42cc1a9b05e1ab7b9` | `ironpilot-spot-execution-v1`；共享 port；精确订单映射；部分成交/费用/滑点/保护单/ManagedLot；4 项专项测试；125 项全工作区测试及全部质量门禁 | 未修改开发计划；未批准任何阶段 Gate |
+| `P3-10A` | `READY` | — | — | — | — | P2-04、P3-05 与 P3-13 完成后依赖已满足 |
+| `P3-06` | `READY` | — | — | — | — | P3-04、P3-05 与 P3-13 完成后依赖已满足 |
 | `P3-07A` | `READY` | — | — | — | — | P1-05 与 P3-03 完成后依赖已满足 |
-| `P3-08` | `PLANNED` | — | — | — | — | — |
+| `P3-08` | `READY` | — | — | — | — | P3-01、P3-03 与 P3-05 完成后依赖已满足 |
 | `P3-07B` | `PLANNED` | — | — | — | — | — |
 | `P3-VS` | `PLANNED` | — | — | — | — | — |
 | `P3-10B` | `PLANNED` | — | — | — | — | — |
@@ -223,9 +225,18 @@ None.
 - 门禁：6 项 Execution Validator 专项测试和 2 项 SQLite validation ledger 测试覆盖 tick/qty/min amount/价格限制、费用与滑点最坏亏损、超授权、陈旧 Context、冲突订单、Observe-only、entry/quantity/stop/target 改写检测、拒绝反馈、ACCEPT/REJECT 原子状态、幂等和非法方案订单为 0；全工作区 121 项测试通过、0 失败，1 项既有 Bybit 线上 WSS 只读测试保持显式忽略；`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo test --workspace --all-targets --locked`、`cargo build --workspace --all-targets --locked`、`cargo metadata --locked --no-deps`、cargo-deny 0.19.4 advisories/bans/licenses/sources、Gitleaks 46 提交历史与源码工作树扫描、ACCEPT/REJECT only/无订单写入/无旧权限模型静态断言和 `git diff --check` 全部通过；`docs/DEVELOPMENT_PLAN.md` 零差异。
 - 已知限制：本 Task 不创建 `OrderIntent`、不模拟 Paper 成交、不调用实时价格限制 API、不授权 Testnet/Live，也不实现业务主循环；新鲜公开/账户事实由后续 Runtime/Adapter 组合提供，P3-05 负责消费 accepted evidence 实现 Paper Execution。本 Task 完成不批准任何阶段 Gate。
 
+### P3-05 — 现货 Paper Execution
+
+- 结果：实现版本化 `ironpilot-spot-execution-v1` 与 `SpotExecutionPort`，由同一 provider-neutral 合同承载 Paper、Backtest 和 Testnet venue；`SpotExecutionRequest` 只能从已 `ACCEPT` 且 hash 未改变的 Context、Validation 与 `AITradingPlan v3` 构造，逐字段保留 AI 的 Market/Limit、quantity、limit/trigger price、TIF、expiry、最大滑点、止损和多目标止盈，不执行本地舍入、调价、缩量或参数替换。提交回执只表示订单已持久化，不冒充成交。
+- 撮合与状态：实现 `ironpilot-paper-matching-v1`，使用精确 Decimal 模拟 Limit/Market、maker/taker fee、受 AI 最大滑点约束的 Market slippage、可用流动性驱动的部分成交、保护止损和止盈；任何 observation 的行情事实生成时间不晚于 AI Context `as_of` 时整笔拒绝并回滚。OPEN_LONG 入场完全成交后才激活保护单；买入 Fill 创建 ManagedLot，卖出 Fill 仅消费可证明的 ManagedLot；止损或退出清空受管数量后关闭 TradePlan 并撤销剩余保护单。
+- 持久化：SQLite migration 新增执行提交、规范订单字段和市场 observation 三张表；有效单实例租约下原子复核 `execution_validations` 的 ACCEPT/hash 证据，写入 execution submission、OrderIntent、PaperOrder、订单规范和审计。action 与 observation 均为幂等边界：相同请求重放业务效果为 0，内容冲突 fail closed；成交、费用、ManagedLot、订单/Action/TradePlan 状态和审计在同一事务提交。
+- Commit：`e05918fc57a3b51f9b94d6d42cc1a9b05e1ab7b9`。
+- 门禁：3 项 application 撮合/映射测试与 1 项 SQLite 端到端测试覆盖 AI entry/stop/take-profit 字段逐项一致、稳定 request hash、Limit 部分成交、Market 滑点与 maker/taker fee、同一决策事实拒绝、提交/observation 重放零副作用、保护单延迟激活、止损清仓、ManagedLot 累积/消耗及原子状态推进；全工作区 125 项测试通过、0 失败，1 项既有 Bybit 线上 WSS 只读测试保持显式忽略；`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo test --workspace --all-targets --locked`、`cargo build --workspace --all-targets --locked`、`cargo metadata --locked --no-deps`、cargo-deny 0.19.4 advisories/bans/licenses/sources、Gitleaks 48 提交历史与源码工作树扫描、共享 port/无同事实成交/幂等/原样字段/ManagedLot 静态断言和 `git diff --check` 全部通过；`docs/DEVELOPMENT_PLAN.md` 零差异。
+- 已知限制：本 Task 提供共享 port 合同和 SQLite Paper adapter；Minimal Historical Harness、Testnet adapter、业务主循环、私有流同步与 Emergency Core 分别由其后续 Task 实现。本 Task 完成不批准任何阶段 Gate，也不授权 Testnet/Live 写入。
+
 ## Next Action
 
-Execute P3-05 next. P3-07A is also READY and remains independent until downstream dependencies converge.
+Execute P3-10A next. P3-06, P3-07A and P3-08 are also READY and remain independent until downstream dependencies converge.
 
 以上内容是依据 `docs/DEVELOPMENT_PLAN.md` 静态依赖生成的进度建议，不改变任何 Task 依赖。
 
