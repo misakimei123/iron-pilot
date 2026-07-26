@@ -14,6 +14,7 @@ mod paper_execution;
 mod paper_runtime;
 mod persistence;
 mod resources;
+mod telegram;
 
 pub use bybit_public::{
     BYBIT_MAINNET_PUBLIC_REST_URL, BybitPublicRestClient, BybitPublicRestError,
@@ -60,3 +61,10 @@ pub use persistence::{
     PendingOutboxRow, PersistenceEffect, SqliteRepository, StorageError,
 };
 pub use resources::{ProcessResourceSampler, ResourceSampleError};
+pub use telegram::{
+    MAX_TELEGRAM_MESSAGE_CHARS, MAX_TELEGRAM_NOTIFICATION_EVENTS, MAX_TELEGRAM_QUERY_ROWS,
+    MAX_TELEGRAM_READONLY_CHATS, MAX_TELEGRAM_RESPONSE_BYTES, MAX_TELEGRAM_UPDATES_PER_POLL,
+    TELEGRAM_BOT_API_BASE_URL, TELEGRAM_BOT_TOKEN_ENV, TELEGRAM_READONLY_VERSION_V1,
+    TelegramNotificationReport, TelegramPollReport, TelegramReadOnlyAdapter,
+    TelegramReadOnlyCommand, TelegramReadOnlyConfig, TelegramReadOnlyError, TelegramReadOnlyText,
+};

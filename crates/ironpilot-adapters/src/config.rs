@@ -12,6 +12,7 @@ use ironpilot_application::{
 };
 
 use crate::deepseek::DEEPSEEK_API_KEY_ENV;
+use crate::telegram::TELEGRAM_BOT_TOKEN_ENV;
 
 pub const CONFIG_PATH_ENV: &str = "IRONPILOT_CONFIG_PATH";
 pub const ENVIRONMENT_NAME_ENV: &str = "IRONPILOT_ENVIRONMENT";
@@ -145,6 +146,7 @@ where
                 | ENVIRONMENT_NAME_ENV
                 | ENVIRONMENT_FINGERPRINT_ENV
                 | DEEPSEEK_API_KEY_ENV
+                | TELEGRAM_BOT_TOKEN_ENV
         ) {
             return Err(LoadConfigError::UnknownEnvironmentVariable {
                 name: key_text.into(),
