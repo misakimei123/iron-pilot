@@ -6,6 +6,7 @@
 
 mod ai;
 mod config;
+mod emergency;
 mod execution;
 mod execution_validation;
 mod persistence;
@@ -21,6 +22,12 @@ pub use config::{
     CONFIG_SCHEMA_VERSION_V2, ConfigValidationError, DeploymentEnvironment, EnvironmentFingerprint,
     ExecutionMode, LlmLimits, MarketLimits, PermissionConfig, QueueLimits, RuntimeConfig,
     RuntimeLimits, StartupIdentity, StorageLimits, ValidatedRuntimeConfig, VersionConfig,
+};
+pub use emergency::{
+    AuthorizedEmergencyCommand, EMERGENCY_COMMAND_SCHEMA_VERSION_V1, EmergencyActionState,
+    EmergencyCommandError, EmergencyCommandHash, EmergencyCommandKind, EmergencyEffect,
+    MAX_EMERGENCY_AUTHORIZATION_SUBJECT_LENGTH, MAX_EMERGENCY_COMMAND_TTL_MILLIS,
+    MAX_EMERGENCY_OBSERVATIONS,
 };
 pub use execution::{
     ExecutionCommandKind, ExecutionEffect, ExecutionFuture, ExecutionOrderIdSet, ExecutionOrderIds,

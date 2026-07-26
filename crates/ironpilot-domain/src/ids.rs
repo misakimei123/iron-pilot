@@ -91,6 +91,7 @@ stable_id!(OrderId);
 stable_id!(FillId);
 stable_id!(ManagedLotId);
 stable_id!(ReconciliationRunId);
+stable_id!(EmergencyActionId);
 stable_id!(AuditEntryId);
 stable_id!(OutboxMessageId);
 stable_id!(RuntimeInstanceId);

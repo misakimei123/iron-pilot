@@ -10,7 +10,7 @@ use ironpilot_domain::{
     AI_DECISION_CONTEXT_SCHEMA_VERSION_V1, AiDecisionContext, AiRawResponse,
     AiTradePlanLedgerEntry, AssetCode, DomainDecimal, InstrumentId, ManagedPosition, PortfolioFill,
     PortfolioFillSide, PortfolioReconciliationStatus, PortfolioSnapshot, ReconciliationRunId,
-    RuntimeInstanceId, SystemState, TradePlanActionId, TradePlanLedgerDisposition,
+    RuntimeInstanceId, SystemState, TradePlanActionId, TradePlanId, TradePlanLedgerDisposition,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -1445,6 +1445,73 @@ pub(crate) async fn consume_managed_lots(
     Ok(())
 }
 
+pub(crate) async fn consume_managed_lots_by_plan(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    trade_plan_id: TradePlanId,
+    quantity: DomainDecimal,
+    occurred_at: i64,
+) -> Result<(), StorageError> {
+    if quantity <= DomainDecimal::ZERO {
+        return Err(StorageError::InvalidPortfolioFill);
+    }
+    let rows: Vec<(String, String)> = sqlx::query_as(
+        "
+        SELECT managed_lot_id, payload_json
+        FROM managed_lots
+        WHERE trade_plan_id = ? AND closed_at IS NULL
+        ORDER BY opened_at, managed_lot_id
+        ",
+    )
+    .bind(trade_plan_id.to_string())
+    .fetch_all(&mut **transaction)
+    .await?;
+    let mut lots = Vec::with_capacity(rows.len());
+    let mut total = DomainDecimal::ZERO;
+    for (managed_lot_id, payload) in rows {
+        let lot = parse_managed_lot(&payload)?;
+        total = total
+            .checked_add(lot.remaining_quantity)
+            .ok_or(StorageError::PortfolioArithmeticOverflow)?;
+        lots.push((managed_lot_id, lot));
+    }
+    if quantity > total {
+        return Err(StorageError::InsufficientManagedQuantity);
+    }
+    let mut quantity_to_consume = quantity;
+    for (managed_lot_id, lot) in lots {
+        if quantity_to_consume == DomainDecimal::ZERO {
+            break;
+        }
+        let consumed = lot.remaining_quantity.min(quantity_to_consume);
+        let remaining_quantity = lot
+            .remaining_quantity
+            .checked_sub(consumed)
+            .ok_or(StorageError::PortfolioArithmeticOverflow)?;
+        quantity_to_consume = quantity_to_consume
+            .checked_sub(consumed)
+            .ok_or(StorageError::PortfolioArithmeticOverflow)?;
+        let payload = managed_lot_payload_json(
+            &lot.base_asset,
+            lot.initial_quantity,
+            remaining_quantity,
+            lot.source_fill_id,
+        );
+        sqlx::query(
+            "
+            UPDATE managed_lots
+            SET closed_at = ?, payload_json = ?
+            WHERE managed_lot_id = ?
+            ",
+        )
+        .bind((remaining_quantity == DomainDecimal::ZERO).then_some(occurred_at))
+        .bind(payload.to_string())
+        .bind(managed_lot_id)
+        .execute(&mut **transaction)
+        .await?;
+    }
+    Ok(())
+}
+
 fn portfolio_fill_json(fill: &PortfolioFill) -> Value {
     json!({
         "schema_version": "ironpilot-portfolio-fill-v1",
@@ -1468,9 +1535,23 @@ fn managed_lot_json(
     remaining_quantity: DomainDecimal,
     source_fill_id: String,
 ) -> Value {
+    managed_lot_payload_json(
+        base_asset.as_str(),
+        initial_quantity,
+        remaining_quantity,
+        source_fill_id,
+    )
+}
+
+fn managed_lot_payload_json(
+    base_asset: &str,
+    initial_quantity: DomainDecimal,
+    remaining_quantity: DomainDecimal,
+    source_fill_id: String,
+) -> Value {
     json!({
         "schema_version": "ironpilot-managed-lot-v1",
-        "base_asset": base_asset.as_str(),
+        "base_asset": base_asset,
         "initial_quantity": normalized_decimal(initial_quantity),
         "remaining_quantity": normalized_decimal(remaining_quantity),
         "source_fill_id": source_fill_id,
@@ -2048,7 +2129,9 @@ mod tests {
                 "ai_trading_plans",
                 "audit_log",
                 "eligibility_events",
+                "emergency_action_steps",
                 "emergency_actions",
+                "emergency_fills",
                 "execution_validations",
                 "fills",
                 "managed_lots",

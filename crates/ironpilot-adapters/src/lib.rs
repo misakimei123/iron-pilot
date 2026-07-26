@@ -9,6 +9,7 @@ mod bybit_public;
 mod bybit_public_websocket;
 mod config;
 mod deepseek;
+mod emergency;
 mod historical;
 mod paper_execution;
 mod paper_runtime;
@@ -38,6 +39,10 @@ pub use deepseek::{
     DeepSeekPricing, DeepSeekProviderConfig, DeepSeekProviderError, DeepSeekProviderErrorKind,
     DeepSeekUsage, MAX_DEEPSEEK_OUTPUT_TOKENS, MAX_DEEPSEEK_REQUEST_TIMEOUT,
     MAX_DEEPSEEK_RESPONSE_BYTES,
+};
+pub use emergency::{
+    EMERGENCY_CORE_VERSION_V1, EmergencyAdapterError, EmergencyExecutionReport,
+    MAX_EMERGENCY_OBSERVATION_AGE_MILLIS, SqlitePaperEmergencyController,
 };
 pub use historical::{
     HistoricalLedgerHash, HistoricalLedgerRecord, HistoricalLedgerRecordKind,

@@ -30,9 +30,9 @@ pub use decision_context::{
 };
 pub use ids::{
     AiDecisionContextId, AiProviderResponseId, AiTradingPlanId, AuditEntryId, CorrelationId,
-    DecisionId, EligibilityEventId, FillId, ManagedLotId, OrderId, OrderIntentId, OutboxMessageId,
-    ParseStableIdError, ReconciliationRunId, RuntimeInstanceId, SnapshotId, TradePlanActionId,
-    TradePlanId,
+    DecisionId, EligibilityEventId, EmergencyActionId, FillId, ManagedLotId, OrderId,
+    OrderIntentId, OutboxMessageId, ParseStableIdError, ReconciliationRunId, RuntimeInstanceId,
+    SnapshotId, TradePlanActionId, TradePlanId,
 };
 pub use instrument::{
     Exchange, InstrumentId, InstrumentType, ParseInstrumentIdError, Symbol,
