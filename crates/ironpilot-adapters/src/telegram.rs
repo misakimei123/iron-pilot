@@ -4,10 +4,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use ironpilot_domain::DomainDecimal;
-use reqwest::{Client as HttpClient, Url, redirect};
-use serde::Deserialize;
-use serde_json::{Value, json};
 use sqlx::Row;
+use teloxide_core::payloads::{GetUpdatesSetters, SendMessageSetters};
+use teloxide_core::requests::Requester;
+use teloxide_core::types::{AllowedUpdate, ChatId, UpdateKind};
+use teloxide_core::{Bot, RequestError};
+use teloxide_reqwest::{Client as TelegramHttpClient, Url, redirect};
 
 use crate::{SqliteRepository, StorageError};
 
@@ -15,7 +17,6 @@ pub const TELEGRAM_READONLY_VERSION_V1: &str = "ironpilot-telegram-readonly-v1";
 pub const TELEGRAM_BOT_API_BASE_URL: &str = "https://api.telegram.org/";
 pub const TELEGRAM_BOT_TOKEN_ENV: &str = "IRONPILOT_TELEGRAM_BOT_TOKEN";
 pub const MAX_TELEGRAM_MESSAGE_CHARS: usize = 4_096;
-pub const MAX_TELEGRAM_RESPONSE_BYTES: usize = 256 * 1_024;
 pub const MAX_TELEGRAM_UPDATES_PER_POLL: u8 = 32;
 pub const MAX_TELEGRAM_QUERY_ROWS: u8 = 20;
 pub const MAX_TELEGRAM_NOTIFICATION_EVENTS: u8 = 32;
@@ -271,20 +272,22 @@ impl TelegramNotificationReport {
 }
 
 pub struct TelegramReadOnlyAdapter {
-    client: HttpClient,
+    bot: Bot,
     config: TelegramReadOnlyConfig,
 }
 
 impl TelegramReadOnlyAdapter {
     pub fn new(config: TelegramReadOnlyConfig) -> Result<Self, TelegramReadOnlyError> {
-        let client = HttpClient::builder()
+        let client = TelegramHttpClient::builder()
             .connect_timeout(config.request_timeout.min(Duration::from_secs(5)))
             .timeout(config.request_timeout)
             .redirect(redirect::Policy::none())
             .user_agent(concat!("ironpilot/", env!("CARGO_PKG_VERSION")))
             .build()
             .map_err(|_| TelegramReadOnlyError::InvalidConfiguration)?;
-        Ok(Self { client, config })
+        let bot = Bot::with_client(config.bot_token.to_string(), client)
+            .set_api_url(config.api_base_url.clone());
+        Ok(Self { bot, config })
     }
 
     pub async fn execute_command(
@@ -326,35 +329,41 @@ impl TelegramReadOnlyAdapter {
         if offset.is_some_and(|value| value < 0) {
             return Err(TelegramReadOnlyError::InvalidCommand);
         }
-        let updates: Vec<WireUpdate> = self
-            .post(
-                "getUpdates",
-                &json!({
-                    "offset": offset,
-                    "limit": MAX_TELEGRAM_UPDATES_PER_POLL,
-                    "timeout": self.config.long_poll_timeout_seconds(),
-                    "allowed_updates": ["message"]
-                }),
+        let offset = offset
+            .map(i32::try_from)
+            .transpose()
+            .map_err(|_| TelegramReadOnlyError::InvalidCommand)?;
+        let mut request = self
+            .bot
+            .get_updates()
+            .limit(MAX_TELEGRAM_UPDATES_PER_POLL)
+            .timeout(
+                u32::try_from(self.config.long_poll_timeout_seconds())
+                    .expect("bounded long-poll timeout fits u32"),
             )
-            .await?;
+            .allowed_updates([AllowedUpdate::Message]);
+        if let Some(offset) = offset {
+            request = request.offset(offset);
+        }
+        let updates = tokio::time::timeout(self.config.request_timeout, request)
+            .await
+            .map_err(|_| TelegramReadOnlyError::Timeout)?
+            .map_err(classify_sdk_error)?;
         if updates.len() > usize::from(MAX_TELEGRAM_UPDATES_PER_POLL)
-            || updates
-                .windows(2)
-                .any(|pair| pair[0].update_id >= pair[1].update_id)
-            || updates.iter().any(|update| update.update_id < 0)
+            || updates.windows(2).any(|pair| pair[0].id >= pair[1].id)
         {
             return Err(TelegramReadOnlyError::InvalidResponse);
         }
         let mut authorized_commands = 0_u8;
         let mut replies_sent = 0_u8;
         for update in &updates {
-            let Some(message) = &update.message else {
+            let UpdateKind::Message(message) = &update.kind else {
                 continue;
             };
-            if !self.config.allowed_chat_ids.contains(&message.chat.id) {
+            if !self.config.allowed_chat_ids.contains(&message.chat.id.0) {
                 continue;
             }
-            let Some(text) = message.text.as_deref() else {
+            let Some(text) = message.text() else {
                 continue;
             };
             let command = match TelegramReadOnlyCommand::parse(text) {
@@ -362,7 +371,7 @@ impl TelegramReadOnlyAdapter {
                 Ok(None) => continue,
                 Err(_) => {
                     self.send_message(
-                        message.chat.id,
+                        message.chat.id.0,
                         &TelegramReadOnlyText::new(
                             "Invalid read-only command. Use /help.".to_owned(),
                         )?,
@@ -375,19 +384,18 @@ impl TelegramReadOnlyAdapter {
             };
             authorized_commands = authorized_commands.saturating_add(1);
             let response = self.execute_command(repository, &command).await?;
-            self.send_message(message.chat.id, &response).await?;
+            self.send_message(message.chat.id.0, &response).await?;
             replies_sent = replies_sent.saturating_add(1);
         }
         let next_offset = updates
             .last()
             .map(|update| {
-                update
-                    .update_id
+                i64::from(update.id.0)
                     .checked_add(1)
                     .ok_or(TelegramReadOnlyError::InvalidResponse)
             })
             .transpose()?
-            .or(offset);
+            .or(offset.map(i64::from));
         Ok(TelegramPollReport {
             next_offset,
             received_updates: u8::try_from(updates.len())
@@ -454,62 +462,15 @@ impl TelegramReadOnlyAdapter {
         chat_id: i64,
         text: &TelegramReadOnlyText,
     ) -> Result<(), TelegramReadOnlyError> {
-        let _: Value = self
-            .post(
-                "sendMessage",
-                &json!({
-                    "chat_id": chat_id,
-                    "text": text.as_str(),
-                    "protect_content": true
-                }),
-            )
-            .await?;
-        Ok(())
-    }
-
-    async fn post<T: for<'de> Deserialize<'de>>(
-        &self,
-        method: &str,
-        payload: &Value,
-    ) -> Result<T, TelegramReadOnlyError> {
-        let endpoint = self
-            .config
-            .api_base_url
-            .join(&format!("./bot{}/{method}", self.config.bot_token))
-            .map_err(|_| TelegramReadOnlyError::InvalidConfiguration)?;
-        let mut response = self
-            .client
-            .post(endpoint)
-            .header("content-type", "application/json")
-            .body(serde_json::to_vec(payload).expect("Telegram request payload must serialize"))
-            .send()
+        let request = self
+            .bot
+            .send_message(ChatId(chat_id), text.as_str())
+            .protect_content(true);
+        tokio::time::timeout(self.config.request_timeout, request)
             .await
-            .map_err(classify_transport)?;
-        let status = response.status();
-        if response
-            .content_length()
-            .is_some_and(|length| length > MAX_TELEGRAM_RESPONSE_BYTES as u64)
-        {
-            return Err(TelegramReadOnlyError::ResponseTooLarge);
-        }
-        let mut body = Vec::new();
-        while let Some(chunk) = response.chunk().await.map_err(classify_transport)? {
-            if body.len().saturating_add(chunk.len()) > MAX_TELEGRAM_RESPONSE_BYTES {
-                return Err(TelegramReadOnlyError::ResponseTooLarge);
-            }
-            body.extend_from_slice(&chunk);
-        }
-        if !status.is_success() {
-            return Err(TelegramReadOnlyError::Http(status.as_u16()));
-        }
-        let envelope: WireEnvelope<T> =
-            serde_json::from_slice(&body).map_err(|_| TelegramReadOnlyError::InvalidResponse)?;
-        if !envelope.ok {
-            return Err(TelegramReadOnlyError::RemoteRejected);
-        }
-        envelope
-            .result
-            .ok_or(TelegramReadOnlyError::InvalidResponse)
+            .map_err(|_| TelegramReadOnlyError::Timeout)?
+            .map_err(classify_sdk_error)?;
+        Ok(())
     }
 }
 
@@ -1013,11 +974,14 @@ fn validate_bot_token(token: &str) -> Result<(), TelegramReadOnlyError> {
     Ok(())
 }
 
-fn classify_transport(error: reqwest::Error) -> TelegramReadOnlyError {
-    if error.is_timeout() {
-        TelegramReadOnlyError::Timeout
-    } else {
-        TelegramReadOnlyError::Transport
+fn classify_sdk_error(error: RequestError) -> TelegramReadOnlyError {
+    match error {
+        RequestError::Network(error) if error.is_timeout() => TelegramReadOnlyError::Timeout,
+        RequestError::Network(_) | RequestError::Io(_) => TelegramReadOnlyError::Transport,
+        RequestError::InvalidJson { .. } => TelegramReadOnlyError::InvalidResponse,
+        RequestError::Api(_) | RequestError::MigrateToChatId(_) | RequestError::RetryAfter(_) => {
+            TelegramReadOnlyError::RemoteRejected
+        }
     }
 }
 
@@ -1034,8 +998,6 @@ pub enum TelegramReadOnlyError {
     ReadModelTooLarge,
     Timeout,
     Transport,
-    Http(u16),
-    ResponseTooLarge,
     InvalidResponse,
     RemoteRejected,
     Storage(StorageError),
@@ -1057,10 +1019,6 @@ impl fmt::Display for TelegramReadOnlyError {
             }
             Self::Timeout => formatter.write_str("Telegram Bot API request timed out"),
             Self::Transport => formatter.write_str("Telegram Bot API transport failed"),
-            Self::Http(status) => write!(formatter, "Telegram Bot API returned HTTP {status}"),
-            Self::ResponseTooLarge => {
-                formatter.write_str("Telegram Bot API response exceeds the bounded body limit")
-            }
             Self::InvalidResponse => formatter.write_str("Telegram Bot API response is invalid"),
             Self::RemoteRejected => formatter.write_str("Telegram Bot API rejected the request"),
             Self::Storage(error) => error.fmt(formatter),
@@ -1077,35 +1035,12 @@ impl std::error::Error for TelegramReadOnlyError {
     }
 }
 
-#[derive(Deserialize)]
-struct WireEnvelope<T> {
-    ok: bool,
-    result: Option<T>,
-}
-
-#[derive(Deserialize)]
-struct WireUpdate {
-    update_id: i64,
-    message: Option<WireMessage>,
-}
-
-#[derive(Deserialize)]
-struct WireMessage {
-    chat: WireChat,
-    text: Option<Box<str>>,
-}
-
-#[derive(Deserialize)]
-struct WireChat {
-    id: i64,
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
 
-    use serde_json::Value;
+    use serde_json::{Value, json};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
 
@@ -1235,14 +1170,14 @@ mod tests {
         let updates = json!({
             "ok": true,
             "result": [
-                {"update_id": 10, "message": {"chat": {"id": 1}, "text": "/status"}},
-                {"update_id": 11, "message": {"chat": {"id": 99}, "text": "/orders"}},
-                {"update_id": 12, "message": {"chat": {"id": 1}, "text": "/emergency"}},
-                {"update_id": 13, "message": {"chat": {"id": 1}, "text": "hello"}}
+                telegram_update(10, 1, "/status"),
+                telegram_update(11, 99, "/orders"),
+                telegram_update(12, 1, "/emergency"),
+                telegram_update(13, 1, "hello")
             ]
         })
         .to_string();
-        let send_ok = json!({"ok": true, "result": {"message_id": 1}}).to_string();
+        let send_ok = json!({"ok": true, "result": telegram_message(1, 1, "sent")}).to_string();
         let (base_url, server) = spawn_http_server(vec![
             updates,
             send_ok.clone(),
@@ -1280,7 +1215,11 @@ mod tests {
 
         let requests = server.await.expect("mock Telegram server should finish");
         assert_eq!(requests.len(), 5);
-        assert!(requests[0].contains(&format!("/bot{TOKEN}/getUpdates")));
+        assert!(
+            requests[0].contains(&format!("/bot{TOKEN}/GetUpdates")),
+            "{}",
+            requests[0]
+        );
         let poll_body = request_json(&requests[0]);
         assert_eq!(poll_body["offset"], 10);
         assert_eq!(poll_body["limit"], MAX_TELEGRAM_UPDATES_PER_POLL);
@@ -1316,16 +1255,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn oversized_and_rejected_bot_responses_fail_closed_without_secret_disclosure() {
+    async fn invalid_and_rejected_sdk_responses_fail_closed_without_secret_disclosure() {
         let (repository, temp_path) = fixture().await;
-        let oversized_body = "x".repeat(MAX_TELEGRAM_RESPONSE_BYTES + 1);
-        let (oversized_url, oversized_server) = spawn_http_server(vec![oversized_body]).await;
-        let oversized = TelegramReadOnlyAdapter::new(
+        let (invalid_url, invalid_server) = spawn_http_server(vec!["not-json".to_owned()]).await;
+        let invalid = TelegramReadOnlyAdapter::new(
             TelegramReadOnlyConfig::with_base_url(
                 TOKEN,
                 vec![1],
                 Duration::from_secs(2),
-                &oversized_url,
+                &invalid_url,
                 true,
             )
             .expect("test config should be valid"),
@@ -1333,15 +1271,22 @@ mod tests {
         .expect("adapter should build")
         .poll_once(&repository, None)
         .await
-        .expect_err("oversized response must fail");
-        assert!(matches!(oversized, TelegramReadOnlyError::ResponseTooLarge));
-        assert!(!oversized.to_string().contains(TOKEN));
-        let _ = oversized_server
+        .expect_err("invalid SDK response must fail");
+        assert!(matches!(invalid, TelegramReadOnlyError::InvalidResponse));
+        assert!(!invalid.to_string().contains(TOKEN));
+        let _ = invalid_server
             .await
-            .expect("oversized mock server should finish");
+            .expect("invalid response mock server should finish");
 
-        let (rejected_url, rejected_server) =
-            spawn_http_server(vec![json!({"ok": false}).to_string()]).await;
+        let (rejected_url, rejected_server) = spawn_http_server(vec![
+            json!({
+                "ok": false,
+                "error_code": 403,
+                "description": "Forbidden: bot was blocked by the user"
+            })
+            .to_string(),
+        ])
+        .await;
         let rejected = TelegramReadOnlyAdapter::new(
             TelegramReadOnlyConfig::with_base_url(
                 TOKEN,
@@ -1537,6 +1482,26 @@ mod tests {
 
     fn id(value: u128) -> String {
         format!("{value:032x}")
+    }
+
+    fn telegram_update(update_id: u32, chat_id: i64, text: &str) -> Value {
+        json!({
+            "update_id": update_id,
+            "message": telegram_message(i32::try_from(update_id).expect("fixture ID fits i32"), chat_id, text)
+        })
+    }
+
+    fn telegram_message(message_id: i32, chat_id: i64, text: &str) -> Value {
+        json!({
+            "message_id": message_id,
+            "date": 1,
+            "chat": {
+                "id": chat_id,
+                "type": "private",
+                "first_name": "IronPilot Test"
+            },
+            "text": text
+        })
     }
 
     async fn spawn_http_server(

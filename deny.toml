@@ -44,13 +44,21 @@ skip = [
     { crate = "block-buffer@0.12.1", reason = "Tungstenite 0.30 uses digest 0.11 while SHA-2 and SQLx still use digest 0.10" },
     { crate = "cpufeatures@0.3.0", reason = "Tungstenite's SHA-1 0.11 graph uses cpufeatures 0.3 while SHA-2 uses 0.2" },
     { crate = "crypto-common@0.2.2", reason = "Tungstenite's digest 0.11 graph uses crypto-common 0.2 while SHA-2 uses 0.1" },
+    { crate = "darling@0.23.0", reason = "Teloxide Core 0.13 uses Serde With 3.21 while async-openai still uses Derive Builder's Darling 0.20" },
+    { crate = "darling_core@0.23.0", reason = "Teloxide Core 0.13 uses Serde With 3.21 while async-openai still uses Derive Builder's Darling 0.20" },
+    { crate = "darling_macro@0.23.0", reason = "Teloxide Core 0.13 uses Serde With 3.21 while async-openai still uses Derive Builder's Darling 0.20" },
     { crate = "digest@0.11.3", reason = "Tungstenite's SHA-1 implementation uses digest 0.11 while SHA-2 and SQLx use digest 0.10" },
+    { crate = "getrandom@0.2.17", reason = "Teloxide Core's Reqwest 0.12 Rustls graph uses Ring's Getrandom 0.2 while async-openai uses Getrandom 0.3" },
     { crate = "getrandom@0.4.3", reason = "Tungstenite's rand 0.10 graph uses getrandom 0.4 while existing runtime and test graphs use older releases" },
     { crate = "hashbrown@0.16.1", reason = "SQLx 0.9 also requires hashbrown 0.17 through a separate internal path" },
     { crate = "r-efi@5.3.0", reason = "async-openai and proptest use getrandom 0.3 while the newer runtime graph uses getrandom 0.4" },
     { crate = "rand@0.9.5", reason = "async-openai and proptest use rand 0.9 while Tokio-Tungstenite 0.30 uses rand 0.10" },
     { crate = "rand_core@0.9.5", reason = "async-openai and proptest use rand_core 0.9 while Tokio-Tungstenite 0.30 uses rand_core 0.10" },
+    { crate = "reqwest@0.12.28", reason = "Teloxide Core 0.13 pins Reqwest 0.12 while the existing adapters and async-openai use Reqwest 0.13" },
     { crate = "syn@2.0.119", reason = "SQLx 0.9 macros use syn 2 while current Serde and thiserror derives use syn 3" },
+    { crate = "wasm-streams@0.4.2", reason = "Teloxide Core's Reqwest 0.12 uses wasm-streams 0.4 while Reqwest 0.13 uses 0.5" },
+    { crate = "webpki-roots@0.26.11", reason = "Teloxide Core's Reqwest 0.12 and Tokio-Tungstenite still expose WebPKI Roots 0.26 alongside 1.0" },
+    { crate = "windows-sys@0.52.0", reason = "Teloxide Core's Reqwest 0.12 Rustls graph retains Ring's Windows Sys 0.52 while Tokio uses 0.61" },
 ]
 skip-tree = []
 
@@ -161,6 +169,59 @@ exact = true
 [[bans.features]]
 crate = "darling@0.20.11"
 allow = ["default", "suggestions"]
+exact = true
+
+# Teloxide Core 0.13's generated Telegram Bot API types use these upstream
+# defaults. Keep the complete set exact so an SDK dependency change fails the
+# supply-chain gate instead of silently expanding the protocol surface.
+[[bans.features]]
+crate = "darling@0.23.0"
+allow = ["default", "suggestions"]
+exact = true
+
+[[bans.features]]
+crate = "derive_more@1.0.0"
+allow = ["default", "deref", "display", "from", "std"]
+exact = true
+
+[[bans.features]]
+crate = "derive_more-impl@1.0.0"
+allow = ["default", "deref", "display", "from"]
+exact = true
+
+[[bans.features]]
+crate = "erasable@1.3.0"
+allow = ["alloc", "default"]
+exact = true
+
+[[bans.features]]
+crate = "rc-box@1.3.0"
+allow = ["default", "erasable"]
+exact = true
+
+[[bans.features]]
+crate = "rgb@0.8.53"
+allow = ["argb", "as-bytes", "bytemuck", "default", "grb"]
+exact = true
+
+[[bans.features]]
+crate = "serde_with@3.21.0"
+allow = ["alloc", "default", "macros", "std"]
+exact = true
+
+[[bans.features]]
+crate = "unicode-xid@0.2.6"
+allow = ["default"]
+exact = true
+
+[[bans.features]]
+crate = "uuid@1.24.0"
+allow = ["default", "rng", "serde", "std", "v4"]
+exact = true
+
+[[bans.features]]
+crate = "windows-sys@0.52.0"
+allow = ["Win32", "Win32_Foundation", "Win32_System", "Win32_System_Threading", "default"]
 exact = true
 
 [[bans.features]]
@@ -631,7 +692,7 @@ exact = true
 
 [[bans.features]]
 crate = "url@2.5.8"
-allow = ["default", "std"]
+allow = ["default", "serde", "std"]
 exact = true
 
 [[bans.features]]

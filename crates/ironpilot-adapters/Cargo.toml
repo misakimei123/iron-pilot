@@ -19,6 +19,8 @@ serde_json = { version = "1.0.151", default-features = false, features = ["raw_v
 sha2 = { version = "0.10.9", default-features = false }
 sqlx = { version = "0.9.0", default-features = false, features = ["macros", "migrate", "runtime-tokio", "sqlite-bundled"] }
 sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
+teloxide-core = { version = "0.13.0", default-features = false, features = ["rustls"] }
+teloxide-reqwest = { package = "reqwest", version = "0.12.7", default-features = false }
 tokio = { version = "1.49.0", default-features = false, features = ["macros", "net", "rt", "sync", "time"] }
 tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
 tower-service = { version = "0.3.3", default-features = false }
