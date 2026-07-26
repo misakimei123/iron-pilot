@@ -6,6 +6,7 @@
 
 mod ai;
 mod config;
+mod execution_validation;
 mod persistence;
 mod runtime;
 
@@ -18,6 +19,13 @@ pub use config::{
     CONFIG_SCHEMA_VERSION_V2, ConfigValidationError, DeploymentEnvironment, EnvironmentFingerprint,
     ExecutionMode, LlmLimits, MarketLimits, PermissionConfig, QueueLimits, RuntimeConfig,
     RuntimeLimits, StartupIdentity, StorageLimits, ValidatedRuntimeConfig, VersionConfig,
+};
+pub use execution_validation::{
+    ActiveTradePlanFact, EXECUTION_VALIDATOR_VERSION_V1, ExecutionAuthorization,
+    ExecutionValidationDecision, ExecutionValidationHash, ExecutionValidationInputError,
+    ExecutionValidationOutcome, ExecutionValidationPolicy, ExecutionValidationRejection,
+    ExecutionValidationRequest, ExecutionValidator, MAX_VALIDATION_REJECTIONS,
+    ManagedPositionExecutionFact, SpotOrderPriceLimits,
 };
 pub use ironpilot_domain::{
     AI_DECISION_CONTEXT_SCHEMA_VERSION_V1, AI_TRADING_PLAN_SCHEMA_VERSION_V3,

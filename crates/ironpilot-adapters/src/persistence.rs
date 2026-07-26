@@ -3,7 +3,8 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use ironpilot_application::{
-    AuditEntry, OutboxMessage, PersistedSystemState, SystemStateChange, UnixMillis,
+    AuditEntry, EXECUTION_VALIDATOR_VERSION_V1, ExecutionValidationDecision,
+    ExecutionValidationOutcome, OutboxMessage, PersistedSystemState, SystemStateChange, UnixMillis,
 };
 use ironpilot_domain::{
     AI_DECISION_CONTEXT_SCHEMA_VERSION_V1, AiDecisionContext, AiRawResponse,
@@ -893,6 +894,202 @@ impl SqliteRepository {
         .transpose()
     }
 
+    pub async fn persist_execution_validation(
+        &self,
+        owner_id: RuntimeInstanceId,
+        decision: &ExecutionValidationDecision,
+        audit: &AuditEntry,
+    ) -> Result<PersistenceEffect, StorageError> {
+        let validated_at = domain_timestamp(decision.validated_at_unix_millis())?;
+        if audit.occurred_at().get() != validated_at {
+            return Err(StorageError::AtomicTimestampMismatch);
+        }
+        let _write_guard = self.write_gate.lock().await;
+        let mut transaction = self.pool.begin().await?;
+        ensure_instance_lease(&mut transaction, owner_id, validated_at).await?;
+
+        let ledger: Option<(String, String, String, String, String)> = sqlx::query_as(
+            "
+            SELECT
+                ledger.trade_plan_id,
+                ledger.context_hash,
+                ledger.plan_hash,
+                ledger.ai_plan_id,
+                plans.action
+            FROM ai_trade_plan_ledger AS ledger
+            JOIN ai_trading_plans AS plans ON plans.ai_plan_id = ledger.ai_plan_id
+            WHERE ledger.action_id = ?
+            ",
+        )
+        .bind(decision.action_id().to_string())
+        .fetch_optional(&mut *transaction)
+        .await?;
+        let Some((trade_plan_id, context_hash, plan_hash, ai_plan_id, action)) = ledger else {
+            return Err(StorageError::ValidationTargetUnavailable);
+        };
+        if trade_plan_id != decision.trade_plan_id().to_string()
+            || context_hash != decision.context_hash()
+            || plan_hash != decision.plan_hash().to_string()
+            || ai_plan_id != decision.plan_id()
+        {
+            return Err(StorageError::ValidationEvidenceMismatch);
+        }
+
+        let insert = sqlx::query(
+            "
+            INSERT INTO execution_validations(
+                action_id, trade_plan_id, ai_plan_id, validator_version, outcome,
+                context_hash, plan_hash, recalculated_maximum_loss_quote,
+                authorized_maximum_loss_quote, validated_at, validation_hash, evidence_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(action_id) DO NOTHING
+            ",
+        )
+        .bind(decision.action_id().to_string())
+        .bind(decision.trade_plan_id().to_string())
+        .bind(decision.plan_id())
+        .bind(EXECUTION_VALIDATOR_VERSION_V1)
+        .bind(decision.outcome().as_str())
+        .bind(decision.context_hash())
+        .bind(decision.plan_hash().to_string())
+        .bind(
+            decision
+                .recalculated_maximum_loss_quote()
+                .map(|value| value.to_string()),
+        )
+        .bind(decision.authorized_maximum_loss_quote().to_string())
+        .bind(validated_at)
+        .bind(decision.validation_hash().to_string())
+        .bind(decision.evidence_json())
+        .execute(&mut *transaction)
+        .await?;
+        if insert.rows_affected() == 0 {
+            let matches: i64 = sqlx::query_scalar(
+                "
+                SELECT EXISTS(
+                    SELECT 1
+                    FROM execution_validations
+                    WHERE action_id = ?
+                      AND trade_plan_id = ?
+                      AND ai_plan_id = ?
+                      AND validator_version = ?
+                      AND outcome = ?
+                      AND context_hash = ?
+                      AND plan_hash = ?
+                      AND recalculated_maximum_loss_quote IS ?
+                      AND authorized_maximum_loss_quote = ?
+                      AND validated_at = ?
+                      AND validation_hash = ?
+                      AND evidence_json = ?
+                )
+                ",
+            )
+            .bind(decision.action_id().to_string())
+            .bind(decision.trade_plan_id().to_string())
+            .bind(decision.plan_id())
+            .bind(EXECUTION_VALIDATOR_VERSION_V1)
+            .bind(decision.outcome().as_str())
+            .bind(decision.context_hash())
+            .bind(decision.plan_hash().to_string())
+            .bind(
+                decision
+                    .recalculated_maximum_loss_quote()
+                    .map(|value| value.to_string()),
+            )
+            .bind(decision.authorized_maximum_loss_quote().to_string())
+            .bind(validated_at)
+            .bind(decision.validation_hash().to_string())
+            .bind(decision.evidence_json())
+            .fetch_one(&mut *transaction)
+            .await?;
+            if matches != 1 {
+                return Err(StorageError::IdempotencyConflict);
+            }
+            transaction.commit().await?;
+            return Ok(PersistenceEffect::DuplicateNoEffect);
+        }
+
+        let action_update = sqlx::query(
+            "
+            UPDATE trade_plan_actions
+            SET state = ?
+            WHERE action_id = ? AND state = 'RECORDED'
+            ",
+        )
+        .bind(match decision.outcome() {
+            ExecutionValidationOutcome::Accept => "VALIDATION_ACCEPTED",
+            ExecutionValidationOutcome::Reject => "VALIDATION_REJECTED",
+        })
+        .bind(decision.action_id().to_string())
+        .execute(&mut *transaction)
+        .await?;
+        if action_update.rows_affected() != 1 {
+            return Err(StorageError::ValidationTargetUnavailable);
+        }
+
+        if action == "OPEN_LONG" {
+            let update = sqlx::query(
+                "
+                UPDATE trade_plans
+                SET state = ?, updated_at = ?
+                WHERE trade_plan_id = ? AND state = 'PROPOSED'
+                ",
+            )
+            .bind(match decision.outcome() {
+                ExecutionValidationOutcome::Accept => "ACCEPTED",
+                ExecutionValidationOutcome::Reject => "REJECTED",
+            })
+            .bind(validated_at)
+            .bind(decision.trade_plan_id().to_string())
+            .execute(&mut *transaction)
+            .await?;
+            if update.rows_affected() != 1 {
+                return Err(StorageError::ValidationTargetUnavailable);
+            }
+        }
+        insert_audit(&mut transaction, audit).await?;
+        transaction.commit().await?;
+        Ok(PersistenceEffect::Applied)
+    }
+
+    pub async fn execution_validation(
+        &self,
+        action_id: TradePlanActionId,
+    ) -> Result<Option<ExecutionValidationRow>, StorageError> {
+        let row = sqlx::query(
+            "
+            SELECT
+                action_id, trade_plan_id, ai_plan_id, validator_version, outcome,
+                context_hash, plan_hash, recalculated_maximum_loss_quote,
+                authorized_maximum_loss_quote, validated_at, validation_hash, evidence_json
+            FROM execution_validations
+            WHERE action_id = ?
+            ",
+        )
+        .bind(action_id.to_string())
+        .fetch_optional(&self.pool)
+        .await?;
+        row.map(|row| {
+            Ok(ExecutionValidationRow {
+                action_id: row.try_get("action_id")?,
+                trade_plan_id: row.try_get("trade_plan_id")?,
+                ai_plan_id: row.try_get("ai_plan_id")?,
+                validator_version: row.try_get("validator_version")?,
+                outcome: row.try_get("outcome")?,
+                context_hash: row.try_get("context_hash")?,
+                plan_hash: row.try_get("plan_hash")?,
+                recalculated_maximum_loss_quote: row.try_get("recalculated_maximum_loss_quote")?,
+                authorized_maximum_loss_quote: row.try_get("authorized_maximum_loss_quote")?,
+                validated_at: UnixMillis::new(row.try_get("validated_at")?)
+                    .map_err(|_| StorageError::InvalidStoredTimestamp)?,
+                validation_hash: row.try_get("validation_hash")?,
+                evidence_json: row.try_get("evidence_json")?,
+            })
+        })
+        .transpose()
+    }
+
     pub async fn backup_to(&self, destination: impl AsRef<Path>) -> Result<(), StorageError> {
         let destination = destination.as_ref();
         if destination.as_os_str().is_empty() || destination == self.database_path {
@@ -1535,6 +1732,22 @@ pub struct AiTradePlanTraceRow {
     pub recorded_at: UnixMillis,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExecutionValidationRow {
+    pub action_id: String,
+    pub trade_plan_id: String,
+    pub ai_plan_id: String,
+    pub validator_version: String,
+    pub outcome: String,
+    pub context_hash: String,
+    pub plan_hash: String,
+    pub recalculated_maximum_loss_quote: Option<String>,
+    pub authorized_maximum_loss_quote: String,
+    pub validated_at: UnixMillis,
+    pub validation_hash: String,
+    pub evidence_json: String,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PersistenceEffect {
     Applied,
@@ -1631,6 +1844,8 @@ pub enum StorageError {
     TargetTradePlanUnavailable {
         trade_plan_id: Box<str>,
     },
+    ValidationTargetUnavailable,
+    ValidationEvidenceMismatch,
     Portfolio(ironpilot_domain::PortfolioError),
 }
 
@@ -1712,6 +1927,12 @@ impl fmt::Display for StorageError {
                 formatter,
                 "target TradePlan {trade_plan_id} is missing, terminal, or belongs to another instrument"
             ),
+            Self::ValidationTargetUnavailable => {
+                formatter.write_str("execution validation target is unavailable or not proposed")
+            }
+            Self::ValidationEvidenceMismatch => formatter.write_str(
+                "execution validation evidence does not match the persisted AI plan ledger",
+            ),
             Self::Portfolio(error) => error.fmt(formatter),
         }
     }
@@ -1758,7 +1979,11 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     use super::{LeaseAcquireError, PersistenceEffect, SqliteRepository, StorageError};
-    use ironpilot_application::{AuditEntry, OutboxMessage, SystemStateChange, UnixMillis};
+    use ironpilot_application::{
+        AuditEntry, ExecutionAuthorization, ExecutionMode, ExecutionValidationDecision,
+        ExecutionValidationOutcome, ExecutionValidationPolicy, ExecutionValidationRequest,
+        ExecutionValidator, OutboxMessage, SpotOrderPriceLimits, SystemStateChange, UnixMillis,
+    };
     use ironpilot_domain::{
         AccountOrderFact, AccountOrderSide, AccountOrderStatus, AiDecisionContext,
         AiDecisionContextId, AiOrderType, AiProviderResponseId, AiRawResponse,
@@ -1808,6 +2033,7 @@ mod tests {
                 "audit_log",
                 "eligibility_events",
                 "emergency_actions",
+                "execution_validations",
                 "fills",
                 "managed_lots",
                 "market_snapshots",
@@ -1962,6 +2188,133 @@ mod tests {
                 "unexpected row count for {table}"
             );
         }
+
+        fixture.close().await;
+    }
+
+    #[tokio::test]
+    async fn accepted_validation_is_atomic_idempotent_and_creates_no_order() {
+        let fixture = Fixture::new().await;
+        let owner = runtime_id(715);
+        fixture
+            .repository
+            .acquire_instance_lease(
+                owner,
+                timestamp(AI_END_AT),
+                std::time::Duration::from_secs(60),
+            )
+            .await
+            .expect("runtime lease should be acquired");
+
+        let entry = ai_ledger_entry(715, "OPEN_LONG", trade_plan_id(715));
+        fixture
+            .repository
+            .persist_ai_trade_plan_ledger(owner, &entry, &ai_ledger_audit(&entry, 715))
+            .await
+            .expect("OPEN_LONG ledger should persist");
+        let decision = accepted_execution_validation(&entry);
+        let validation_audit = execution_validation_audit(&decision, 715);
+        assert_eq!(
+            fixture
+                .repository
+                .persist_execution_validation(owner, &decision, &validation_audit)
+                .await
+                .expect("validation should persist"),
+            PersistenceEffect::Applied
+        );
+        assert_eq!(
+            fixture
+                .repository
+                .persist_execution_validation(owner, &decision, &validation_audit)
+                .await
+                .expect("same validation should be idempotent"),
+            PersistenceEffect::DuplicateNoEffect
+        );
+
+        let row = fixture
+            .repository
+            .execution_validation(entry.action_id())
+            .await
+            .expect("validation query should succeed")
+            .expect("validation must exist");
+        assert_eq!(row.outcome, "ACCEPT");
+        assert_eq!(row.plan_hash, entry.plan().plan_hash().to_string());
+        assert_eq!(row.validation_hash, decision.validation_hash().to_string());
+        let plan_state: String =
+            sqlx::query_scalar("SELECT state FROM trade_plans WHERE trade_plan_id = ?")
+                .bind(entry.trade_plan_id().to_string())
+                .fetch_one(fixture.repository.pool())
+                .await
+                .expect("TradePlan state should be readable");
+        let action_state: String =
+            sqlx::query_scalar("SELECT state FROM trade_plan_actions WHERE action_id = ?")
+                .bind(entry.action_id().to_string())
+                .fetch_one(fixture.repository.pool())
+                .await
+                .expect("action state should be readable");
+        let order_intents: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM order_intents")
+            .fetch_one(fixture.repository.pool())
+            .await
+            .expect("order-intent count should be readable");
+        assert_eq!(plan_state, "ACCEPTED");
+        assert_eq!(action_state, "VALIDATION_ACCEPTED");
+        assert_eq!(order_intents, 0, "P3-13 must never create an order intent");
+
+        fixture.close().await;
+    }
+
+    #[tokio::test]
+    async fn rejected_validation_closes_the_plan_and_illegal_plan_creates_zero_orders() {
+        let fixture = Fixture::new().await;
+        let owner = runtime_id(716);
+        fixture
+            .repository
+            .acquire_instance_lease(
+                owner,
+                timestamp(AI_END_AT),
+                std::time::Duration::from_secs(60),
+            )
+            .await
+            .expect("runtime lease should be acquired");
+        let entry = ai_ledger_entry(716, "OPEN_LONG", trade_plan_id(716));
+        fixture
+            .repository
+            .persist_ai_trade_plan_ledger(owner, &entry, &ai_ledger_audit(&entry, 716))
+            .await
+            .expect("OPEN_LONG ledger should persist");
+
+        let decision = execution_validation(&entry, ExecutionMode::ObserveOnly);
+        assert_eq!(decision.outcome(), ExecutionValidationOutcome::Reject);
+        fixture
+            .repository
+            .persist_execution_validation(
+                owner,
+                &decision,
+                &execution_validation_audit(&decision, 716),
+            )
+            .await
+            .expect("rejected validation should persist");
+
+        let (plan_state, action_state): (String, String) = sqlx::query_as(
+            "
+            SELECT plans.state, actions.state
+            FROM trade_plans AS plans
+            JOIN trade_plan_actions AS actions
+              ON actions.trade_plan_id = plans.trade_plan_id
+            WHERE actions.action_id = ?
+            ",
+        )
+        .bind(entry.action_id().to_string())
+        .fetch_one(fixture.repository.pool())
+        .await
+        .expect("validation states should be readable");
+        let order_intents: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM order_intents")
+            .fetch_one(fixture.repository.pool())
+            .await
+            .expect("order-intent count should be readable");
+        assert_eq!(plan_state, "REJECTED");
+        assert_eq!(action_state, "VALIDATION_REJECTED");
+        assert_eq!(order_intents, 0);
 
         fixture.close().await;
     }
@@ -2739,6 +3092,8 @@ mod tests {
             RulesHash::from_sha256([9; 32]),
         )
         .expect("AI context rules snapshot is valid");
+        let is_open = action == "OPEN_LONG";
+        let managed_btc = if is_open { "0" } else { "0.4" };
         let portfolio = PortfolioReconciler::reconcile(
             vec![
                 ExchangeAssetBalance::new(asset("BTC"), decimal("0.5"), decimal("0"))
@@ -2747,7 +3102,7 @@ mod tests {
                     .expect("USDT balance is valid"),
             ],
             vec![
-                LocalAssetBalance::new(asset("BTC"), decimal("0.5"), decimal("0.4"))
+                LocalAssetBalance::new(asset("BTC"), decimal("0.5"), decimal(managed_btc))
                     .expect("BTC local balance is valid"),
                 LocalAssetBalance::new(asset("USDT"), decimal("1000"), decimal("0"))
                     .expect("USDT local balance is valid"),
@@ -2755,21 +3110,17 @@ mod tests {
             end_at,
         )
         .expect("AI context portfolio is valid");
-        let context_id = AiDecisionContextId::from_str(&uuid_text(sequence + 10_000))
-            .expect("context ID is valid");
-        let context = AiDecisionContext::new(
-            context_id,
-            as_of,
-            primary,
-            confirmation,
-            book,
-            features,
-            &rules_snapshot,
-            &portfolio,
+        let managed_positions = if is_open {
+            Vec::new()
+        } else {
             vec![
                 ironpilot_domain::ManagedPosition::new(instrument(), asset("BTC"), decimal("0.4"))
                     .expect("managed position is valid"),
-            ],
+            ]
+        };
+        let open_orders = if is_open {
+            Vec::new()
+        } else {
             vec![
                 AccountOrderFact::new(
                     format!("exchange-{sequence}"),
@@ -2784,7 +3135,21 @@ mod tests {
                     end_at,
                 )
                 .expect("account order is valid"),
-            ],
+            ]
+        };
+        let context_id = AiDecisionContextId::from_str(&uuid_text(sequence + 10_000))
+            .expect("context ID is valid");
+        let context = AiDecisionContext::new(
+            context_id,
+            as_of,
+            primary,
+            confirmation,
+            book,
+            features,
+            &rules_snapshot,
+            &portfolio,
+            managed_positions,
+            open_orders,
             decimal("25.00"),
         )
         .expect("AI Decision Context is valid");
@@ -2912,12 +3277,103 @@ mod tests {
         .expect("AI ledger audit is valid")
     }
 
+    fn accepted_execution_validation(
+        entry: &AiTradePlanLedgerEntry,
+    ) -> ExecutionValidationDecision {
+        execution_validation(entry, ExecutionMode::Paper)
+    }
+
+    fn execution_validation(
+        entry: &AiTradePlanLedgerEntry,
+        execution_mode: ExecutionMode,
+    ) -> ExecutionValidationDecision {
+        let end_at = u64::try_from(AI_END_AT).expect("test timestamp fits u64");
+        let rules_snapshot = InstrumentRulesSnapshot::new(
+            vec![rules()],
+            ExchangeServerTime::new(end_at / 1_000, end_at * 1_000_000, end_at)
+                .expect("server time is valid"),
+            end_at,
+            end_at + 60_000,
+            RulesHash::from_sha256([9; 32]),
+        )
+        .expect("rules snapshot is valid");
+        let portfolio = PortfolioReconciler::reconcile(
+            vec![
+                ExchangeAssetBalance::new(asset("BTC"), decimal("0.5"), decimal("0"))
+                    .expect("BTC balance is valid"),
+                ExchangeAssetBalance::new(asset("USDT"), decimal("1000"), decimal("0"))
+                    .expect("USDT balance is valid"),
+            ],
+            vec![
+                LocalAssetBalance::new(asset("BTC"), decimal("0.5"), decimal("0"))
+                    .expect("BTC local balance is valid"),
+                LocalAssetBalance::new(asset("USDT"), decimal("1000"), decimal("0"))
+                    .expect("USDT local balance is valid"),
+            ],
+            end_at,
+        )
+        .expect("portfolio is valid");
+        let book = TopOfBook::new(
+            instrument(),
+            end_at,
+            end_at + 500,
+            decimal("218.9"),
+            decimal("10"),
+            decimal("219.1"),
+            decimal("12"),
+        )
+        .expect("book is valid");
+        let price_limits =
+            SpotOrderPriceLimits::new(instrument(), decimal("220"), decimal("190"), end_at + 2_500)
+                .expect("price limits are valid");
+        let authorization = ExecutionAuthorization::new(execution_mode, true, vec![instrument()])
+            .expect("authorization is valid");
+        let policy =
+            ExecutionValidationPolicy::new(decimal("0"), 5_000, 5_000).expect("policy is valid");
+        ExecutionValidator::validate(ExecutionValidationRequest {
+            action_id: entry.action_id(),
+            trade_plan_id: entry.trade_plan_id(),
+            context: entry.context(),
+            plan: entry.plan(),
+            rules: &rules_snapshot,
+            portfolio: &portfolio,
+            managed_positions: &[],
+            open_orders: &[],
+            active_trade_plans: &[],
+            top_of_book: &book,
+            price_limits: &price_limits,
+            current_maximum_loss_quote: decimal("25"),
+            authorization: &authorization,
+            policy,
+            validated_at_unix_millis: end_at + 4_000,
+        })
+    }
+
+    fn execution_validation_audit(
+        decision: &ExecutionValidationDecision,
+        sequence: u128,
+    ) -> AuditEntry {
+        AuditEntry::new(
+            audit_id(sequence + 30_000),
+            timestamp(
+                i64::try_from(decision.validated_at_unix_millis())
+                    .expect("test timestamp fits i64"),
+            ),
+            "EXECUTION_VALIDATION_RECORDED",
+            Some(decision.action_id().to_string()),
+            serde_json::from_str(decision.evidence_json())
+                .expect("validation evidence must be JSON"),
+        )
+        .expect("validation audit is valid")
+    }
+
     async fn ai_table_count(repository: &SqliteRepository, table: &str) -> i64 {
         let query = match table {
             "ai_decision_contexts" => "SELECT COUNT(*) FROM ai_decision_contexts",
             "ai_provider_responses" => "SELECT COUNT(*) FROM ai_provider_responses",
             "ai_trading_plans" => "SELECT COUNT(*) FROM ai_trading_plans",
             "ai_trade_plan_ledger" => "SELECT COUNT(*) FROM ai_trade_plan_ledger",
+            "execution_validations" => "SELECT COUNT(*) FROM execution_validations",
             "trade_plans" => "SELECT COUNT(*) FROM trade_plans",
             "trade_plan_actions" => "SELECT COUNT(*) FROM trade_plan_actions",
             "audit_log" => "SELECT COUNT(*) FROM audit_log",

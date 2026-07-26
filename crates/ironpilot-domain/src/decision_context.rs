@@ -11,8 +11,9 @@ use crate::{
     FEATURE_CANDLE_WINDOW, InstrumentId, InstrumentRulesSnapshot, InstrumentTradingStatus,
     KeyLocation, MARKET_FEATURES_VERSION_V1, ManagedPosition, MarketDataSource,
     MarketFeatureEngine, MarketFeatureError, MarketFeatureSnapshot, MarketTimeframe,
-    PORTFOLIO_SCHEMA_VERSION_V1, PatternSemantic, PortfolioReconciliationStatus, PortfolioSnapshot,
-    SpotInstrumentRules, TopOfBook, TradePlanActionId, TradePlanId, TradePlanState,
+    PORTFOLIO_SCHEMA_VERSION_V1, PatternSemantic, PortfolioHash, PortfolioReconciliationStatus,
+    PortfolioSnapshot, RulesHash, SpotInstrumentRules, TopOfBook, TradePlanActionId, TradePlanId,
+    TradePlanState,
 };
 
 pub const MAX_CONTEXT_MANAGED_POSITIONS: usize = 8;
@@ -147,6 +148,41 @@ impl AccountOrderFact {
     }
 
     #[must_use]
+    pub fn order_link_id(&self) -> Option<&str> {
+        self.order_link_id.as_deref()
+    }
+
+    #[must_use]
+    pub const fn side(&self) -> AccountOrderSide {
+        self.side
+    }
+
+    #[must_use]
+    pub const fn order_type(&self) -> AiOrderType {
+        self.order_type
+    }
+
+    #[must_use]
+    pub const fn limit_price(&self) -> Option<DomainDecimal> {
+        self.limit_price
+    }
+
+    #[must_use]
+    pub const fn original_quantity(&self) -> DomainDecimal {
+        self.original_quantity
+    }
+
+    #[must_use]
+    pub const fn filled_quantity(&self) -> DomainDecimal {
+        self.filled_quantity
+    }
+
+    #[must_use]
+    pub const fn status(&self) -> AccountOrderStatus {
+        self.status
+    }
+
+    #[must_use]
     pub const fn observed_at_unix_millis(&self) -> u64 {
         self.observed_at_unix_millis
     }
@@ -174,6 +210,10 @@ pub struct AiDecisionContext {
     as_of_unix_millis: u64,
     valid_until_unix_millis: u64,
     maximum_loss_quote: DomainDecimal,
+    instrument_rules_hash: RulesHash,
+    portfolio_hash: PortfolioHash,
+    managed_positions: Vec<ManagedPosition>,
+    open_orders: Vec<AccountOrderFact>,
     payload_json: Box<str>,
     context_hash: AiDecisionContextHash,
 }
@@ -308,6 +348,10 @@ impl AiDecisionContext {
             as_of_unix_millis,
             valid_until_unix_millis,
             maximum_loss_quote,
+            instrument_rules_hash: instrument_rules.rules_hash(),
+            portfolio_hash: portfolio.snapshot_hash(),
+            managed_positions,
+            open_orders,
             payload_json,
             context_hash,
         })
@@ -336,6 +380,26 @@ impl AiDecisionContext {
     #[must_use]
     pub const fn maximum_loss_quote(&self) -> DomainDecimal {
         self.maximum_loss_quote
+    }
+
+    #[must_use]
+    pub const fn instrument_rules_hash(&self) -> RulesHash {
+        self.instrument_rules_hash
+    }
+
+    #[must_use]
+    pub const fn portfolio_hash(&self) -> PortfolioHash {
+        self.portfolio_hash
+    }
+
+    #[must_use]
+    pub fn managed_positions(&self) -> &[ManagedPosition] {
+        &self.managed_positions
+    }
+
+    #[must_use]
+    pub fn open_orders(&self) -> &[AccountOrderFact] {
+        &self.open_orders
     }
 
     #[must_use]

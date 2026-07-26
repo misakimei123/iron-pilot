@@ -45,6 +45,21 @@ impl DomainDecimal {
     pub fn checked_sub(self, other: Self) -> Option<Self> {
         self.0.checked_sub(other.0).map(Self)
     }
+
+    #[must_use]
+    pub fn checked_mul(self, other: Self) -> Option<Self> {
+        self.0.checked_mul(other.0).map(Self)
+    }
+
+    #[must_use]
+    pub fn checked_div(self, other: Self) -> Option<Self> {
+        self.0.checked_div(other.0).map(Self)
+    }
+
+    #[must_use]
+    pub fn checked_rem(self, other: Self) -> Option<Self> {
+        self.0.checked_rem(other.0).map(Self)
+    }
 }
 
 impl fmt::Display for DomainDecimal {

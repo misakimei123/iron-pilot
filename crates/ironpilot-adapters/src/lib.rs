@@ -36,7 +36,7 @@ pub use deepseek::{
     MAX_DEEPSEEK_RESPONSE_BYTES,
 };
 pub use persistence::{
-    AiTradePlanTraceRow, AuditRow, InstanceLease, LeaseAcquireError, PendingOutboxRow,
-    PersistenceEffect, SqliteRepository, StorageError,
+    AiTradePlanTraceRow, AuditRow, ExecutionValidationRow, InstanceLease, LeaseAcquireError,
+    PendingOutboxRow, PersistenceEffect, SqliteRepository, StorageError,
 };
 pub use resources::{ProcessResourceSampler, ResourceSampleError};
