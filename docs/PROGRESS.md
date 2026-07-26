@@ -21,12 +21,12 @@
 
 - Current phase: Phase E — Parallel Hardening
 - In progress:
-  - P4-02A
+  - None
 - Ready:
   - None
 - Blocked:
   - P3-11
-- Next recommended task: complete the explicitly authorized P4-02A Testnet protocol smoke; P3-11 still waits for an operator-controlled 30-day Paper environment
+- Next recommended task: collect the operator-controlled 30-day P3-11 Paper evidence; P4-02B remains dependency-blocked by P3-11
 
 ## Task Status
 
@@ -62,7 +62,7 @@
 | `P3-10B` | `DONE` | 2026-07-26 | 2026-07-26 | `d4f732624574758a8972674ac7e19b9a5eef4860` | `docs/FULL_HISTORICAL_STRATEGY_EVALUATION_V1.md`; 3 targeted tests; 146 workspace tests | Offline-only evaluation; Rule-only is not production eligible; no stage Gate approved |
 | `P3-11` | `BLOCKED` | 2026-07-26 | — | `76049ec4284e583346716ec85abd97994df46104` | `docs/LONG_RUNNING_PAPER_SAFETY_V1.md`; 5 targeted tests; 151 workspace tests | Evidence implementation complete; real 30-day Paper window, credentials, drills, and reviewer Gate remain |
 | `P4-01` | `DONE` | 2026-07-26 | 2026-07-26 | `3711e2761c2481363788ca6802b703fb635347ca` | `docs/BYBIT_PRIVATE_SYNC_V1.md`; 5 targeted tests; 156 workspace tests | SDK-owned private protocol; REST ack is not a fill; duplicate effect 0; disconnect/reconciliation convergence; next-Context facts; no stage Gate approved |
-| `P4-02A` | `IN_PROGRESS` | 2026-07-26 | — | — | User explicitly authorized the bounded Bybit Testnet write smoke on 2026-07-26 | Testnet Spot-only; no Mainnet, real funds, stage Gate, derivatives or capability expansion |
+| `P4-02A` | `DONE` | 2026-07-26 | 2026-07-26 | `1ae428bd9285643596555c851a4e5c06c9fb96ec` | `docs/BYBIT_TESTNET_PROTOCOL_SMOKE_V1.md`; online run `1b63e6ca077743099fcccca4e8fa7b67`; 6 targeted tests; 162 workspace tests | Authorized Testnet Spot protocol smoke converged; no Mainnet, real funds, stage Gate, derivatives or capability expansion |
 | `P4-02B` | `PLANNED` | — | — | — | — | — |
 | `P4-03` | `PLANNED` | — | — | — | — | — |
 | `P4-04` | `PLANNED` | — | — | — | — | — |
@@ -336,12 +336,23 @@
 - Gates: 5 targeted tests passed; the full workspace passed 156 tests with 0 failures and 1 explicitly ignored live Bybit public-WSS smoke. Formatting, strict Clippy, locked build/test/metadata, cargo-deny advisories/bans/licenses/sources, Gitleaks history plus `crates/`, `docs/` and `vendor/`, SDK reuse/no custom private wire client checks, lossless bounded queue checks, provenance comparison and `git diff --check` passed. `docs/DEVELOPMENT_PLAN.md` remained unchanged.
 - Authority boundary: no Testnet or Live exchange write was executed or authorized, and no stage Gate was approved.
 
+### P4-02A — Bybit Testnet Protocol Smoke
+
+- Authorization: the user explicitly authorized a minimal Bybit Testnet sequence on 2026-07-26 covering order placement, query, cancellation, private stream, Emergency and restart reconciliation writes. Mainnet, real funds, derivatives, capability expansion and stage Gate approval remain outside scope.
+- Implementation: the SDK-only runner is fixed to the official Testnet endpoints, Spot `BTCUSDT`, no leverage, `ip4-` ownership IDs and a 10 USDT per-order reference-notional cap. Append-only SQLite evidence binds source `PlannedSpotOrder` and actual SDK request hashes; identical `orderLinkId` replay has zero exchange effect and conflicting replay fails closed. DPAPI helper scripts keep credentials outside the repository and clear process variables after use.
+- Emergency and restart: Emergency cancels only open project-owned orders and sells only the quantity proven by this smoke's private buy executions, not the pre-existing wallet. The same SQLite file must then reopen and converge from an SDK-typed REST order/wallet snapshot with no open owned order.
+- Transport and compatibility: the operator-selected loopback proxy reached official REST and private WebSocket endpoints. The audited SDK overlay uses mature `tokio-socks 0.5.3` for proxy-owned DNS/TLS transport, accepts body `retCode` when a proxy strips the optional response header, and parses current Spot order/execution empty or missing fields. Failure cleanup is restricted to open `ip4-` orders and net project-owned executions.
+- Online evidence: run `1b63e6ca077743099fcccca4e8fa7b67` persisted 3 REST acknowledgements, 12 private events and 2 private executions. The limit probe was queryable, duplicate submission was `DUPLICATE_NO_EFFECT` and the order finalized `Cancelled`; the bounded market buy and Emergency exit finalized `Filled`; restart reconciliation applied and an independent post-run REST recovery check found 0 open owned orders.
+- Failure-path evidence: two earlier post-write compatibility failures invoked owned-only recovery. Their limit probes finalized `Cancelled`, each bounded buy was matched by an `ip4-r-` recovery sell, and the final independent check found no open owned order. Any remainder is below the exchange base precision after subtracting the base-asset fee; no pre-existing wallet BTC was sold.
+- Deterministic gates: 6 targeted tests passed. The full workspace passed 162 tests with 0 failures and 1 explicitly ignored live Bybit public-WSS smoke. Formatting, strict Clippy, locked offline build/test/metadata, cargo-deny advisories/bans/licenses/sources, Gitleaks across 74 commits plus current `crates/`, `docs/`, `scripts/` and `vendor/`, SDK reuse/no custom protocol checks, development-plan zero-diff and `git diff --check` passed.
+- Implementation commit: `1ae428bd9285643596555c851a4e5c06c9fb96ec`; task-start progress commit: `8a6629f`.
+- Completion boundary: P4-02A is `DONE`. This records Task acceptance evidence only and does not approve any stage Gate.
+
 ## Next Action
 
-P4-02A is now dependency-ready, but its protocol smoke includes exchange writes
-and therefore cannot start without explicit Testnet write authorization.
-P3-11 stays BLOCKED until the operator-controlled 30-day Paper evidence and
-reviewer decision exist.
+P4-02A is complete. P4-02B remains dependency-blocked because P3-11 still
+requires the operator-controlled continuous 30-day Paper window, all required
+failure drills, a qualified report and a reviewer decision.
 
 以上内容是依据 `docs/DEVELOPMENT_PLAN.md` 静态依赖生成的进度建议，不改变任何 Task 依赖。
 
