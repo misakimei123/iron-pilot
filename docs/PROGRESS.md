@@ -20,12 +20,12 @@
 ## Current Focus
 
 - Current phase: Phase E — Parallel Hardening
-- In progress: None
+- In progress: P3-11 Long-running Paper Safety
 - Ready:
   - P3-11
   - P4-01
 - Blocked: None
-- Next recommended task: P3-11 Long-running Paper Safety; P4-01 remains independently READY
+- Next recommended task: establish P3-11 soak evidence and begin the non-compressible 30-day observation window; P4-01 remains independently READY
 
 ## Task Status
 
@@ -59,7 +59,7 @@
 | `P3-07B` | `DONE` | 2026-07-26 | 2026-07-26 | `1c68737b78669e9c4cd42c129f465e1eceaf025b` | `ironpilot-telegram-emergency-v1`；SDK chat/user 身份、UUID v4 nonce、二次确认、TTL、一次性消费与统一 Emergency Command；6 项 Telegram 专项测试；143 项全工作区测试及全部质量门禁 | 只构造授权命令，直接交易写入为 0；重启使未确认 challenge fail closed；未批准任何阶段 Gate |
 | `P3-VS` | `DONE` | 2026-07-26 | 2026-07-26 | `919d77b0d67573a0a60729bae12fbf2f16ac3d72` | Repository evidence matrix；143 项测试；用户于 2026-07-26 明确接受证据并批准 Gate | 用户明确决定先不执行线上 DeepSeek/Telegram smoke；不授权 Testnet 写、实盘、永续或新闻能力 |
 | `P3-10B` | `DONE` | 2026-07-26 | 2026-07-26 | `d4f732624574758a8972674ac7e19b9a5eef4860` | `docs/FULL_HISTORICAL_STRATEGY_EVALUATION_V1.md`; 3 targeted tests; 146 workspace tests | Offline-only evaluation; Rule-only is not production eligible; no stage Gate approved |
-| `P3-11` | `READY` | — | — | — | — | P3-VS 已由用户批准 |
+| `P3-11` | `IN_PROGRESS` | 2026-07-26 | — | — | — | P3-VS 已由用户批准；最终 Gate 要求连续 30 天真实 Paper 证据 |
 | `P4-01` | `READY` | — | — | — | — | P3-VS、P2-02 与 P3-01 均已完成 |
 | `P4-02A` | `PLANNED` | — | — | — | — | — |
 | `P4-02B` | `PLANNED` | — | — | — | — | — |
@@ -308,8 +308,10 @@ None.
 
 ## Next Action
 
-P3-11 Long-running Paper Safety is the next recommended task. P4-01 remains
-independently READY. Neither task has been started by this completion update.
+P3-11 Long-running Paper Safety is active. Its continuous 30-day evidence
+window is non-compressible; deterministic tests or a virtual clock cannot be
+reported as completion evidence. P4-01 remains independently READY and
+untouched.
 
 以上内容是依据 `docs/DEVELOPMENT_PLAN.md` 静态依赖生成的进度建议，不改变任何 Task 依赖。
 
