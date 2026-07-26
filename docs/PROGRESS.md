@@ -22,10 +22,10 @@
 - Current phase: Phase C — AI-Dominant Paper
 - In progress: None
 - Ready:
-  - P3-13
+  - P3-05
   - P3-07A
 - Blocked: None
-- Next recommended task: P3-13
+- Next recommended task: P3-05
 
 ## Task Status
 
@@ -50,8 +50,8 @@
 | `P3-12` | `DONE` | 2026-07-25 | 2026-07-25 | `117dad5dede912b3850b93ff8bf47404bde32a84` | `AITradingPlan v3` 合同；v2 源码/API/状态/配置隔离；Replay v2 版本证据；遗留 SQLite 表只读封存；8 项专项测试与全量门禁 | 未修改开发计划；未批准任何阶段 Gate |
 | `P3-03` | `DONE` | 2026-07-25 | 2026-07-25 | `e093bc8c11d7a9927450b6be652eb26eab4c2dd8` | 完整事实 Context/稳定 hash；原始响应与 AI Plan provenance；原子 TradePlan Ledger；8 项专项测试与全量门禁 | 未修改开发计划；未批准任何阶段 Gate |
 | `P3-04` | `DONE` | 2026-07-25 | 2026-07-25 | `98f30dddf68ab8fc88c522d9a24e1c2c123da3c7`；`7928509ddad5ff65e8ab4e8540db86b0d6cc00c6` | Prompt v1；`async-openai` DeepSeek client；strict parse；usage/cost/latency；预算；一次 replan；原始证据；13 项专项测试与全量门禁 | v3.1.0 开源优先重构；未批准任何阶段 Gate；确定性门禁不调用线上 DeepSeek |
-| `P3-13` | `READY` | — | — | — | — | P3-12 完成后依赖已满足 |
-| `P3-05` | `PLANNED` | — | — | — | — | — |
+| `P3-13` | `DONE` | 2026-07-26 | 2026-07-26 | `86203e92147acfd5671b158fd1edf546685a9347` | `ironpilot-execution-validator-v1`；完整兼容性/授权/最大亏损校验；原子 validation ledger；8 项专项持久化与领域测试；121 项全工作区测试及全部质量门禁 | 只返回 ACCEPT/REJECT，未修改 AI 方案或生成订单；未批准任何阶段 Gate |
+| `P3-05` | `READY` | — | — | — | — | P3-03 与 P3-13 完成后依赖已满足 |
 | `P3-10A` | `PLANNED` | — | — | — | — | — |
 | `P3-06` | `PLANNED` | — | — | — | — | — |
 | `P3-07A` | `READY` | — | — | — | — | P1-05 与 P3-03 完成后依赖已满足 |
@@ -214,9 +214,18 @@ None.
 - 门禁：全工作区 113 项测试通过、0 失败，1 项既有 Bybit 线上 WSS 只读测试保持显式忽略；`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo test --workspace --all-targets --locked`、`cargo build --workspace --all-targets --locked`、`cargo metadata --locked --no-deps`、cargo-deny 0.19.4 advisories/bans/licenses/sources、Gitleaks 8.30.1 Git 历史与工作树扫描、SDK 单请求/原始证据/响应上限断言和 `git diff --check` 全部通过；开发计划 v3.1.0 已在独立提交升版，重构提交本身未修改计划。
 - 已知限制：本 Task 不执行 P3-13 的 `ACCEPT/REJECT`，不生成 P3-05 的 OrderIntent/Paper 订单，也不实现 P3-06 的业务主循环；确定性仓库门禁使用本地 HTTP 协议服务，不消耗真实 DeepSeek API。Task 验收不批准任何阶段 Gate。
 
+### P3-13 — Execution Validation 与 User Authorization
+
+- 结果：实现版本化 `ironpilot-execution-validator-v1`，对已持久化 `AITradingPlan v3` 只做 `ACCEPT/REJECT`：逐项绑定 Context/AI plan/action/TradePlan ID 与 hash，核对 schema、TTL、Spot instrument scope、当前 rules hash、Portfolio/受管持仓/活动订单、用户最大亏损授权、部署模式和 AI 权限；Context 后账户事实、规则或授权变化全部 fail closed。订单兼容性覆盖 exact tick/quantity step、Limit/Market 数量上限、min order amount、Market IOC、精确 Spot `buyLmt`/`sellLmt`、余额、受管资产和冲突订单，不执行本地舍入、缩量、调价、移动止损或替换目标。
+- 最大亏损与反馈：`OPEN_LONG` 独立使用 entry/stop/quantity、双边 taker fee 和 AI `max_slippage_quote` 重算最坏亏损；`MODIFY_PROTECTION` 使用当前受管数量、平均入场和新/现有保护价重算；AI 声明值低于重算值或任一值超过当前用户授权均整体拒绝。拒绝码和 bounded 说明可直接构造同一 Context 的一次 `AiPlanRejectionFeedback`；accepted evidence 只绑定原始 canonical plan hash，entry/quantity/stop/target 等任一字段变化都会失去授权。
+- 持久化：SQLite migration 新增 `execution_validations`；有效单实例租约下原子核对 AI ledger evidence、持久化 outcome/loss/rejection/hash、更新 action 为 `VALIDATION_ACCEPTED/REJECTED`、将 `OPEN_LONG` TradePlan 从 `PROPOSED` 转为 `ACCEPTED/REJECTED` 并追加审计。action ID 是幂等键，相同重放业务效果为 0，内容冲突 fail closed；无论 ACCEPT 或 REJECT 均不写 `order_intents` 或订单。
+- Commit：`86203e92147acfd5671b158fd1edf546685a9347`。
+- 门禁：6 项 Execution Validator 专项测试和 2 项 SQLite validation ledger 测试覆盖 tick/qty/min amount/价格限制、费用与滑点最坏亏损、超授权、陈旧 Context、冲突订单、Observe-only、entry/quantity/stop/target 改写检测、拒绝反馈、ACCEPT/REJECT 原子状态、幂等和非法方案订单为 0；全工作区 121 项测试通过、0 失败，1 项既有 Bybit 线上 WSS 只读测试保持显式忽略；`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo test --workspace --all-targets --locked`、`cargo build --workspace --all-targets --locked`、`cargo metadata --locked --no-deps`、cargo-deny 0.19.4 advisories/bans/licenses/sources、Gitleaks 46 提交历史与源码工作树扫描、ACCEPT/REJECT only/无订单写入/无旧权限模型静态断言和 `git diff --check` 全部通过；`docs/DEVELOPMENT_PLAN.md` 零差异。
+- 已知限制：本 Task 不创建 `OrderIntent`、不模拟 Paper 成交、不调用实时价格限制 API、不授权 Testnet/Live，也不实现业务主循环；新鲜公开/账户事实由后续 Runtime/Adapter 组合提供，P3-05 负责消费 accepted evidence 实现 Paper Execution。本 Task 完成不批准任何阶段 Gate。
+
 ## Next Action
 
-Execute P3-13 next. P3-07A is also READY and remains independent until downstream dependencies converge.
+Execute P3-05 next. P3-07A is also READY and remains independent until downstream dependencies converge.
 
 以上内容是依据 `docs/DEVELOPMENT_PLAN.md` 静态依赖生成的进度建议，不改变任何 Task 依赖。
 
