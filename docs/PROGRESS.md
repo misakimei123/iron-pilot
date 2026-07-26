@@ -20,12 +20,13 @@
 ## Current Focus
 
 - Current phase: Phase E — Parallel Hardening
-- In progress: None
-- Ready:
+- In progress:
   - P4-01
+- Ready:
+  - None
 - Blocked:
   - P3-11
-- Next recommended task: P4-01 can proceed independently while P3-11 waits for an operator-controlled 30-day Paper environment
+- Next recommended task: complete P4-01 while P3-11 waits for an operator-controlled 30-day Paper environment
 
 ## Task Status
 
@@ -60,7 +61,7 @@
 | `P3-VS` | `DONE` | 2026-07-26 | 2026-07-26 | `919d77b0d67573a0a60729bae12fbf2f16ac3d72` | Repository evidence matrix；143 项测试；用户于 2026-07-26 明确接受证据并批准 Gate | 用户明确决定先不执行线上 DeepSeek/Telegram smoke；不授权 Testnet 写、实盘、永续或新闻能力 |
 | `P3-10B` | `DONE` | 2026-07-26 | 2026-07-26 | `d4f732624574758a8972674ac7e19b9a5eef4860` | `docs/FULL_HISTORICAL_STRATEGY_EVALUATION_V1.md`; 3 targeted tests; 146 workspace tests | Offline-only evaluation; Rule-only is not production eligible; no stage Gate approved |
 | `P3-11` | `BLOCKED` | 2026-07-26 | — | `76049ec4284e583346716ec85abd97994df46104` | `docs/LONG_RUNNING_PAPER_SAFETY_V1.md`; 5 targeted tests; 151 workspace tests | Evidence implementation complete; real 30-day Paper window, credentials, drills, and reviewer Gate remain |
-| `P4-01` | `READY` | — | — | — | — | P3-VS、P2-02 与 P3-01 均已完成 |
+| `P4-01` | `IN_PROGRESS` | 2026-07-26 | — | — | — | P3-VS、P2-02 与 P3-01 均已完成 |
 | `P4-02A` | `PLANNED` | — | — | — | — | — |
 | `P4-02B` | `PLANNED` | — | — | — | — | — |
 | `P4-03` | `PLANNED` | — | — | — | — | — |
