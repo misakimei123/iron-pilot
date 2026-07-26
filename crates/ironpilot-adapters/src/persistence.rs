@@ -1982,9 +1982,9 @@ mod tests {
     use ironpilot_application::{
         AuditEntry, ExecutionAuthorization, ExecutionMode, ExecutionOrderIdSet, ExecutionOrderIds,
         ExecutionValidationDecision, ExecutionValidationOutcome, ExecutionValidationPolicy,
-        ExecutionValidationRequest, ExecutionValidator, OutboxMessage, PaperExecutionError,
-        PaperExecutionPolicy, PaperMarketObservation, SpotExecutionPort, SpotExecutionRequest,
-        SpotOrderPriceLimits, SystemStateChange, UnixMillis,
+        OutboxMessage, PaperExecutionError, PaperExecutionPolicy, PaperMarketObservation,
+        SpotExecutionPort, SpotExecutionRequest, SpotOrderPriceLimits, SystemStateChange,
+        UnixMillis,
     };
     use ironpilot_domain::{
         AccountOrderFact, AccountOrderSide, AccountOrderStatus, AiDecisionContext,
@@ -1999,6 +1999,11 @@ mod tests {
         TradePlanActionId, TradePlanId, validated_spot_instrument_rules,
     };
     use serde_json::json;
+
+    use crate::{
+        HistoricalValidationFacts, MinimalHistoricalHarnessError, MinimalHistoricalReplayInput,
+        SqliteMinimalHistoricalHarness,
+    };
 
     static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
     const AI_END_AT: i64 = 1_800_000_000_000;
@@ -2513,6 +2518,118 @@ mod tests {
         assert_eq!(stop_fill_payload["execution_price"], "199");
         assert_eq!(stop_fill_payload["fee_quote"], "0.0398");
 
+        fixture.close().await;
+    }
+
+    #[tokio::test]
+    async fn minimal_historical_harness_is_deterministic_and_prefix_stable() {
+        let first_fixture = Fixture::new().await;
+        let second_fixture = Fixture::new().await;
+        let extended_fixture = Fixture::new().await;
+        let owner = runtime_id(760);
+        for repository in [
+            &first_fixture.repository,
+            &second_fixture.repository,
+            &extended_fixture.repository,
+        ] {
+            repository
+                .acquire_instance_lease(
+                    owner,
+                    timestamp(AI_END_AT),
+                    std::time::Duration::from_secs(60),
+                )
+                .await
+                .expect("historical runtime lease should be acquired");
+        }
+
+        let short_input = historical_input(760, false, false);
+        let extended_input = historical_input(760, true, false);
+        let policy =
+            PaperExecutionPolicy::new(decimal("0.001"), decimal("0.002"), decimal("0.001"))
+                .expect("historical paper policy should be valid");
+        let first_report =
+            SqliteMinimalHistoricalHarness::new(&first_fixture.repository, owner, policy)
+                .run(&short_input)
+                .await
+                .expect("first historical replay should succeed");
+        let second_report =
+            SqliteMinimalHistoricalHarness::new(&second_fixture.repository, owner, policy)
+                .run(&short_input)
+                .await
+                .expect("identical historical replay should succeed");
+        let extended_report =
+            SqliteMinimalHistoricalHarness::new(&extended_fixture.repository, owner, policy)
+                .run(&extended_input)
+                .await
+                .expect("extended historical replay should succeed");
+
+        assert_eq!(
+            first_report, second_report,
+            "same recorded Context, AI plan, validation facts, IDs, fees, slippage and observations must produce the same report ledger"
+        );
+        assert_eq!(
+            historical_ledger_rows(&first_fixture.repository).await,
+            historical_ledger_rows(&second_fixture.repository).await,
+            "same input must persist the same canonical SQLite ledger"
+        );
+        assert_eq!(
+            first_report.records(),
+            &extended_report.records()[..first_report.records().len()],
+            "adding later observations must not change the existing ledger prefix"
+        );
+        assert_ne!(
+            first_report.ledger_hash(),
+            extended_report.ledger_hash(),
+            "the appended stop execution must extend the cumulative ledger"
+        );
+        assert_eq!(first_report.fill_ids().len(), 2);
+        assert_eq!(extended_report.fill_ids().len(), 3);
+
+        let first_fill: String = sqlx::query_scalar(
+            "SELECT payload_json FROM fills ORDER BY occurred_at, fill_id LIMIT 1",
+        )
+        .fetch_one(first_fixture.repository.pool())
+        .await
+        .expect("historical fill should be readable");
+        let first_fill: serde_json::Value =
+            serde_json::from_str(&first_fill).expect("historical fill should be JSON");
+        assert_eq!(first_fill["execution_price"], "210");
+        assert_eq!(first_fill["fee_quote"], "0.0084");
+
+        first_fixture.close().await;
+        second_fixture.close().await;
+        extended_fixture.close().await;
+    }
+
+    #[tokio::test]
+    async fn minimal_historical_harness_rejects_decision_fact_reuse_before_writes() {
+        let fixture = Fixture::new().await;
+        let owner = runtime_id(761);
+        fixture
+            .repository
+            .acquire_instance_lease(
+                owner,
+                timestamp(AI_END_AT),
+                std::time::Duration::from_secs(60),
+            )
+            .await
+            .expect("historical runtime lease should be acquired");
+        let input = historical_input(761, false, true);
+        let policy =
+            PaperExecutionPolicy::new(decimal("0.001"), decimal("0.002"), decimal("0.001"))
+                .expect("historical paper policy should be valid");
+        let result = SqliteMinimalHistoricalHarness::new(&fixture.repository, owner, policy)
+            .run(&input)
+            .await;
+        assert!(matches!(
+            result,
+            Err(MinimalHistoricalHarnessError::DecisionFactReuse)
+        ));
+        assert_eq!(
+            ai_table_count(&fixture.repository, "ai_decision_contexts").await,
+            0,
+            "look-ahead rejection must happen before any ledger write"
+        );
         fixture.close().await;
     }
 
@@ -3548,6 +3665,10 @@ mod tests {
         entry: &AiTradePlanLedgerEntry,
         execution_mode: ExecutionMode,
     ) -> ExecutionValidationDecision {
+        historical_validation_facts(execution_mode).validate(entry)
+    }
+
+    fn historical_validation_facts(execution_mode: ExecutionMode) -> HistoricalValidationFacts {
         let end_at = u64::try_from(AI_END_AT).expect("test timestamp fits u64");
         let rules_snapshot = InstrumentRulesSnapshot::new(
             vec![rules()],
@@ -3591,23 +3712,127 @@ mod tests {
             .expect("authorization is valid");
         let policy =
             ExecutionValidationPolicy::new(decimal("0"), 5_000, 5_000).expect("policy is valid");
-        ExecutionValidator::validate(ExecutionValidationRequest {
-            action_id: entry.action_id(),
-            trade_plan_id: entry.trade_plan_id(),
-            context: entry.context(),
-            plan: entry.plan(),
-            rules: &rules_snapshot,
-            portfolio: &portfolio,
-            managed_positions: &[],
-            open_orders: &[],
-            active_trade_plans: &[],
-            top_of_book: &book,
-            price_limits: &price_limits,
-            current_maximum_loss_quote: decimal("25"),
-            authorization: &authorization,
+        HistoricalValidationFacts::new(
+            rules_snapshot,
+            portfolio,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            book,
+            price_limits,
+            decimal("25"),
+            authorization,
             policy,
-            validated_at_unix_millis: end_at + 4_000,
-        })
+            end_at + 4_000,
+        )
+    }
+
+    fn historical_input(
+        sequence: u128,
+        include_stop: bool,
+        reuse_decision_fact: bool,
+    ) -> MinimalHistoricalReplayInput {
+        let entry = ai_ledger_entry(sequence, "OPEN_LONG", trade_plan_id(sequence));
+        let ids = ExecutionOrderIdSet::new(
+            Some(ExecutionOrderIds::new(
+                order_intent_id(sequence),
+                order_id(sequence),
+            )),
+            Some(ExecutionOrderIds::new(
+                order_intent_id(sequence + 1),
+                order_id(sequence + 1),
+            )),
+            vec![ExecutionOrderIds::new(
+                order_intent_id(sequence + 2),
+                order_id(sequence + 2),
+            )],
+        )
+        .expect("historical execution IDs should be valid");
+        let end_at = u64::try_from(AI_END_AT).expect("test timestamp fits u64");
+        let first_source = if reuse_decision_fact {
+            entry.context().as_of_unix_millis()
+        } else {
+            end_at + 6_000
+        };
+        let mut observations = vec![
+            PaperMarketObservation::new(
+                snapshot_id(sequence + 1),
+                instrument(),
+                first_source,
+                end_at + 6_001,
+                decimal("209.9"),
+                decimal("210.1"),
+                decimal("209"),
+                decimal("211"),
+                decimal("0.04"),
+            )
+            .expect("first historical observation should be valid"),
+            PaperMarketObservation::new(
+                snapshot_id(sequence + 2),
+                instrument(),
+                end_at + 7_000,
+                end_at + 7_001,
+                decimal("209.9"),
+                decimal("210.1"),
+                decimal("209"),
+                decimal("211"),
+                decimal("0.06"),
+            )
+            .expect("second historical observation should be valid"),
+        ];
+        if include_stop {
+            observations.push(
+                PaperMarketObservation::new(
+                    snapshot_id(sequence + 3),
+                    instrument(),
+                    end_at + 8_000,
+                    end_at + 8_001,
+                    decimal("199"),
+                    decimal("199.2"),
+                    decimal("198"),
+                    decimal("201"),
+                    decimal("0.10"),
+                )
+                .expect("historical stop observation should be valid"),
+            );
+        }
+        MinimalHistoricalReplayInput::new(
+            entry,
+            historical_validation_facts(ExecutionMode::Paper),
+            ids,
+            end_at + 5_000,
+            rules(),
+            observations,
+        )
+    }
+
+    async fn historical_ledger_rows(repository: &SqliteRepository) -> Vec<String> {
+        let queries = [
+            "SELECT 'context|' || context_hash || '|' || payload_json FROM ai_decision_contexts ORDER BY context_id",
+            "SELECT 'response|' || response_hash || '|' || raw_response FROM ai_provider_responses ORDER BY response_id",
+            "SELECT 'plan|' || plan_hash || '|' || payload_json FROM ai_trading_plans ORDER BY ai_plan_id",
+            "SELECT 'ledger|' || action_id || '|' || trade_plan_id || '|' || context_hash || '|' || response_hash || '|' || plan_hash FROM ai_trade_plan_ledger ORDER BY action_id",
+            "SELECT 'validation|' || validation_hash || '|' || evidence_json FROM execution_validations ORDER BY action_id",
+            "SELECT 'trade_plan|' || trade_plan_id || '|' || state || '|' || payload_json FROM trade_plans ORDER BY trade_plan_id",
+            "SELECT 'action|' || action_id || '|' || state || '|' || payload_json FROM trade_plan_actions ORDER BY action_id",
+            "SELECT 'submission|' || request_hash || '|' || payload_json FROM paper_execution_submissions ORDER BY action_id",
+            "SELECT 'intent|' || order_intent_id || '|' || state || '|' || payload_json FROM order_intents ORDER BY order_intent_id",
+            "SELECT 'order|' || order_id || '|' || state || '|' || payload_json FROM paper_orders ORDER BY order_id",
+            "SELECT 'observation|' || observation_hash || '|' || payload_json || '|' || effect_json FROM paper_market_observations ORDER BY observed_at, observation_id",
+            "SELECT 'fill|' || fill_id || '|' || payload_json FROM fills ORDER BY occurred_at, fill_id",
+            "SELECT 'lot|' || managed_lot_id || '|' || COALESCE(CAST(closed_at AS TEXT), 'OPEN') || '|' || payload_json FROM managed_lots ORDER BY managed_lot_id",
+            "SELECT 'audit|' || audit_entry_id || '|' || category || '|' || payload_json FROM audit_log ORDER BY audit_entry_id",
+        ];
+        let mut rows = Vec::new();
+        for query in queries {
+            rows.extend(
+                sqlx::query_scalar::<_, String>(query)
+                    .fetch_all(repository.pool())
+                    .await
+                    .expect("canonical historical ledger rows should be readable"),
+            );
+        }
+        rows
     }
 
     fn execution_validation_audit(

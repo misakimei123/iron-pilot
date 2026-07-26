@@ -9,6 +9,7 @@ mod bybit_public;
 mod bybit_public_websocket;
 mod config;
 mod deepseek;
+mod historical;
 mod paper_execution;
 mod persistence;
 mod resources;
@@ -35,6 +36,12 @@ pub use deepseek::{
     DeepSeekPricing, DeepSeekProviderConfig, DeepSeekProviderError, DeepSeekProviderErrorKind,
     DeepSeekUsage, MAX_DEEPSEEK_OUTPUT_TOKENS, MAX_DEEPSEEK_REQUEST_TIMEOUT,
     MAX_DEEPSEEK_RESPONSE_BYTES,
+};
+pub use historical::{
+    HistoricalLedgerHash, HistoricalLedgerRecord, HistoricalLedgerRecordKind,
+    HistoricalValidationFacts, MAX_MINIMAL_HISTORICAL_OBSERVATIONS,
+    MINIMAL_HISTORICAL_HARNESS_VERSION_V1, MinimalHistoricalHarnessError,
+    MinimalHistoricalReplayInput, MinimalHistoricalReplayReport, SqliteMinimalHistoricalHarness,
 };
 pub use paper_execution::{
     PaperExecutionAdapterError, PaperExecutionReport, SqlitePaperExecutionPort,
