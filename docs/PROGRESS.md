@@ -19,12 +19,13 @@
 
 ## Current Focus
 
-- Current phase: Phase C — AI-Dominant Paper
-- In progress: None
-- Ready: None
-- Blocked:
-  - P3-VS
-- Next recommended task: obtain the explicit P3-VS Gate decision and resolve whether separate live DeepSeek evidence is required
+- Current phase: Phase E — Parallel Hardening
+- In progress: P3-10B Full Historical Strategy Evaluation
+- Ready:
+  - P3-11
+  - P4-01
+- Blocked: None
+- Next recommended task: complete P3-10B while P3-11 and P4-01 remain independently READY
 
 ## Task Status
 
@@ -56,10 +57,10 @@
 | `P3-07A` | `DONE` | 2026-07-26 | 2026-07-26 | `290512c6ce0fdcb1119e3f847f654eeed0bbec00`；`2eccccea75d68647eadce3291d49d005ff393c8d` | `ironpilot-telegram-readonly-v1`；`teloxide-core 0.13.0` SDK；完整只读查询面；4 项专项测试；137 项全工作区测试及全部质量门禁 | DEVELOPMENT_PLAN v3.2.0 开源 SDK 强制复用纠正；生产路径 SQL 写入为 0；无策略或紧急控制命令；未批准任何阶段 Gate |
 | `P3-08` | `DONE` | 2026-07-26 | 2026-07-26 | `a4545a2e527744298565a58bef6c320a9f3ced70` | `ironpilot-emergency-core-v1`；统一授权命令、5 分钟 TTL、幂等 hash；项目归属订单撤销；受管仓位部分减仓、重启恢复与 append-only 证据；4 项专项测试；141 项全工作区测试及全部质量门禁 | 完成后保持 `HALTED` 且不自动恢复入场；无 AI/Telegram 依赖；未知资产卖出为 0；未批准任何阶段 Gate |
 | `P3-07B` | `DONE` | 2026-07-26 | 2026-07-26 | `1c68737b78669e9c4cd42c129f465e1eceaf025b` | `ironpilot-telegram-emergency-v1`；SDK chat/user 身份、UUID v4 nonce、二次确认、TTL、一次性消费与统一 Emergency Command；6 项 Telegram 专项测试；143 项全工作区测试及全部质量门禁 | 只构造授权命令，直接交易写入为 0；重启使未确认 challenge fail closed；未批准任何阶段 Gate |
-| `P3-VS` | `BLOCKED` | 2026-07-26 | — | — | Repository evidence review complete; explicit Gate decision pending | P3-04、P3-05、P3-06、P3-07A、P3-07B、P3-08 与 P3-10A 均已完成；Codex 不得自行批准 Gate |
-| `P3-10B` | `PLANNED` | — | — | — | — | — |
-| `P3-11` | `PLANNED` | — | — | — | — | — |
-| `P4-01` | `PLANNED` | — | — | — | — | — |
+| `P3-VS` | `DONE` | 2026-07-26 | 2026-07-26 | `919d77b0d67573a0a60729bae12fbf2f16ac3d72` | Repository evidence matrix；143 项测试；用户于 2026-07-26 明确接受证据并批准 Gate | 用户明确决定先不执行线上 DeepSeek/Telegram smoke；不授权 Testnet 写、实盘、永续或新闻能力 |
+| `P3-10B` | `IN_PROGRESS` | 2026-07-26 | — | — | — | P3-VS 已由用户批准 |
+| `P3-11` | `READY` | — | — | — | — | P3-VS 已由用户批准 |
+| `P4-01` | `READY` | — | — | — | — | P3-VS、P2-02 与 P3-01 均已完成 |
 | `P4-02A` | `PLANNED` | — | — | — | — | — |
 | `P4-02B` | `PLANNED` | — | — | — | — | — |
 | `P4-03` | `PLANNED` | — | — | — | — | — |
@@ -70,12 +71,7 @@
 
 ## Active Blockers
 
-- Task ID：`P3-VS`。
-- 阻挡原因：阶段 Gate 必须由用户或授权评审者显式决定，Codex 不得自行批准；同时仓库确定性门禁只证明完整事实进入生产 `async-openai` DeepSeek 请求合同，没有执行线上 DeepSeek 调用。
-- 发现日期：2026-07-26。
-- 相关提交或日志：本节下方 `P3-VS — Prototype Vertical Slice Gate Evidence Review`。
-- 解除条件：用户明确接受本证据并批准 Gate；若用户要求线上 DeepSeek 证明，则先在受控环境注入秘密并执行单独的有界只读模型 smoke，再由用户决定。
-- 是否需要修改开发计划：否。
+None.
 
 未来阻塞项必须记录：
 
@@ -285,7 +281,7 @@
 
 ### P3-VS — Prototype Vertical Slice Gate Evidence Review
 
-- 状态：仓库内技术证据复核已完成，标记 `BLOCKED`，等待用户或授权评审者作出 Gate 决定；Codex 未把本 Gate 标记为 `DONE`，也未解锁任何后继 Task。
+- 状态：仓库内技术证据复核完成；用户于 2026-07-26 明确接受现有证据、批准 `P3-VS` 并决定先不执行线上 smoke。Gate 已标记 `DONE`，静态依赖满足的 `P3-10B`、`P3-11` 与 `P4-01` 已解锁。
 - 原始 15m/1h、Features、账户与 DeepSeek 请求合同：`deepseek::tests::prompt_contains_raw_market_features_account_rules_and_authorization` 使用两组完整 `FEATURE_CANDLE_WINDOW` 闭合 K 线、实时盘口、`MarketDataSource::WebSocketLive`、实际 `MarketFeatureEngine`、instrument rules、Portfolio 和最大亏损授权构建生产 Prompt；`deepseek::tests::exact_open_long_is_parsed_with_raw_usage_cost_and_latency_evidence` 证明该 Prompt 经 `async-openai` 的真实请求/响应合同产生完整 `OPEN_LONG`、原始响应、usage、费用和延迟证据。
 - 在线证据边界：确定性仓库门禁按既有 P3-04 合同使用有界本地 HTTP 服务，不调用线上 DeepSeek；当前环境也没有 `IRONPILOT_DEEPSEEK_API_KEY`。因此本次证明的是“完整、带 `WebSocketLive` 来源标记的确定性事实进入生产 DeepSeek SDK 请求合同”，不是实际行情或一次线上模型调用证明。若 Gate 对“真实 15m/1h 进入 DeepSeek”的解释要求实际线上事实与请求，则该项仍需在秘密注入和外网可用的受控环境另行执行，不能由本次结果替代。
 - AI 动作：`deepseek::tests::exact_open_long_is_parsed_with_raw_usage_cost_and_latency_evidence` 覆盖合法 `OPEN_LONG`；`deepseek::tests::multiple_management_actions_parse_without_local_parameter_generation` 覆盖 `NO_TRADE`、`HOLD` 和 `MODIFY_PROTECTION`；`deepseek::tests::runtime_provider_sends_prompt_v2_with_the_management_target` 证明复评 Prompt 绑定目标活动计划。
@@ -300,11 +296,9 @@
 
 ## Next Action
 
-Request an explicit P3-VS Gate decision from the user or another authorized
-reviewer. The decision must also state whether the deterministic production-SDK
-request evidence satisfies the first criterion or whether a separate live
-DeepSeek smoke is required. Do not mark P3-VS `DONE` or unlock P3-10B, P3-11,
-or P4 tasks before that decision.
+Implement P3-10B Full Historical Strategy Evaluation next. P3-11 and P4-01 are
+also READY after the approved P3-VS Gate, but remain untouched while P3-10B is
+the active task.
 
 以上内容是依据 `docs/DEVELOPMENT_PLAN.md` 静态依赖生成的进度建议，不改变任何 Task 依赖。
 
