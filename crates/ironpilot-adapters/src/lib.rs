@@ -8,6 +8,7 @@
 mod bybit_private;
 mod bybit_public;
 mod bybit_public_websocket;
+mod bybit_testnet;
 mod config;
 mod deepseek;
 mod emergency;
@@ -36,6 +37,15 @@ pub use bybit_public_websocket::{
     BybitMarketStreamError, BybitPublicWebSocketClient, FeedFreshnessRegistry,
     FeedFreshnessSnapshot, KlineInterval, KlineUpdate, MarketStreamErrorKind, SubscriptionPlan,
     SymbolFreshness, TopicFreshness,
+};
+pub use bybit_testnet::{
+    BYBIT_TESTNET_API_KEY_ENV, BYBIT_TESTNET_API_SECRET_ENV, BYBIT_TESTNET_MAX_ORDER_QUOTE,
+    BYBIT_TESTNET_ORDER_LINK_PREFIX, BYBIT_TESTNET_PROTOCOL_SMOKE_VERSION_V1,
+    BYBIT_TESTNET_SOCKS5_PROXY_ENV, BYBIT_TESTNET_SYMBOL, BYBIT_TESTNET_WRITE_AUTHORIZATION_ENV,
+    BYBIT_TESTNET_WRITE_AUTHORIZATION_VALUE, BybitTestnetRecoveryOrder, BybitTestnetRecoveryReport,
+    BybitTestnetSmokeError, BybitTestnetSmokeReport, TestnetOrderMapping, TestnetSubmissionEffect,
+    map_planned_spot_order_to_testnet, recover_bybit_testnet_owned_orders,
+    run_bybit_testnet_protocol_smoke,
 };
 pub use config::{
     CONFIG_PATH_ENV, ENVIRONMENT_FINGERPRINT_ENV, ENVIRONMENT_NAME_ENV, LoadConfigError,

@@ -8,6 +8,9 @@ pub struct Config {
     /// WebSocket server URL
     pub url: String,
 
+    /// Optional SOCKS5 proxy. Domain resolution stays proxy-owned.
+    pub socks5_proxy: Option<String>,
+
     /// Maximum number of pending commands (backpressure)
     pub command_queue_size: usize,
 
@@ -40,6 +43,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             url: String::new(),
+            socks5_proxy: None,
             command_queue_size: 64,
             event_queue_size: 256,
             max_reconnect_attempts: 5,
@@ -62,6 +66,11 @@ impl Config {
 
     pub fn command_queue_size(mut self, n: usize) -> Self {
         self.command_queue_size = n;
+        self
+    }
+
+    pub fn socks5_proxy(mut self, proxy: impl Into<String>) -> Self {
+        self.socks5_proxy = Some(proxy.into());
         self
     }
 

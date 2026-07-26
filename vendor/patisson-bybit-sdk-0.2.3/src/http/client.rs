@@ -1024,10 +1024,25 @@ where
     let elapsed_ms = start.elapsed().as_millis();
     let headers = parse_headers(response.headers());
     let json = response.text().await?;
-    if !headers.is_ret_code_ok() {
-        let msg: APIErrorResponse = deserialize_json(&json)?;
-        tracing::debug!(elapsed_ms, ret_code = msg.ret_code, "api error response");
-        return Err(msg.into());
+    decode_response(&json, headers, elapsed_ms)
+}
+
+fn decode_response<T>(
+    json: &str,
+    headers: Headers,
+    elapsed_ms: u128,
+) -> Result<Response<T>, Error>
+where
+    T: serde::de::DeserializeOwned,
+{
+    let envelope: APIErrorResponse = deserialize_json(&json)?;
+    if envelope.ret_code != 0 {
+        tracing::debug!(
+            elapsed_ms,
+            ret_code = envelope.ret_code,
+            "api error response"
+        );
+        return Err(envelope.into());
     }
 
     tracing::debug!(

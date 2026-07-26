@@ -45,6 +45,14 @@ pub fn start_bybit_private_sdk_stream(
     SdkStream::new(bybit_private_sdk_config(url))
 }
 
+#[must_use]
+pub(crate) fn start_bybit_private_sdk_stream_through_socks5(
+    url: impl Into<String>,
+    proxy: impl Into<String>,
+) -> (SdkStreamHandle, tokio::sync::mpsc::Receiver<SdkEvent>) {
+    SdkStream::new(bybit_private_sdk_config(url).socks5_proxy(proxy))
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BybitSyncEffect {
     Applied,

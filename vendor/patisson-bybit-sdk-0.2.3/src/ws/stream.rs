@@ -1,10 +1,15 @@
 use futures_util::{SinkExt, StreamExt};
 use std::time::Duration;
 use tokio::{
+    net::TcpStream,
     sync::mpsc,
     time::{Instant, sleep, timeout},
 };
-use tokio_tungstenite::{connect_async, tungstenite::Message};
+use tokio_socks::tcp::Socks5Stream;
+use tokio_tungstenite::{
+    MaybeTlsStream, WebSocketStream, client_async_tls_with_config, connect_async,
+    tungstenite::{Message, handshake::client::Response},
+};
 use tracing::{debug, error, info, warn};
 
 use crate::{
@@ -90,7 +95,7 @@ impl Stream {
     async fn step_connecting(&mut self, attempt: u32) -> State {
         debug!(attempt, "connecting…");
 
-        match connect_async(&self.config.url).await {
+        match connect(&self.config).await {
             Ok((ws_stream, _)) => {
                 info!("websocket connected");
                 self.emit(Event::Connected).await;
@@ -168,7 +173,14 @@ impl Stream {
                                     }
                                     Err(e) => {
                                         warn!(error = %e, "parsing IncomingMessage failed");
-                                        self.emit(Event::ParseError(e.to_string())).await;
+                                        let kind = if json.contains("\"op\"") {
+                                            "control"
+                                        } else {
+                                            "non_control"
+                                        };
+                                        let detail =
+                                            format!("{e}; {kind}_payload_bytes={}", json.len());
+                                        self.emit(Event::ParseError(detail)).await;
                                     }
                                 }
                             }
@@ -284,6 +296,31 @@ impl Stream {
             delay_ms,
         }
     }
+}
+
+async fn connect(
+    config: &Config,
+) -> Result<
+    (WebSocketStream<MaybeTlsStream<TcpStream>>, Response),
+    Box<dyn std::error::Error + Send + Sync>,
+> {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let Some(proxy) = config.socks5_proxy.as_deref() else {
+        return connect_async(&config.url)
+            .await
+            .map_err(|error| Box::new(error) as Box<dyn std::error::Error + Send + Sync>);
+    };
+    let url = url::Url::parse(&config.url)?;
+    let host = url
+        .host_str()
+        .ok_or_else(|| format!("WebSocket URL has no host: {}", config.url))?;
+    let port = url
+        .port_or_known_default()
+        .ok_or_else(|| format!("WebSocket URL has no port: {}", config.url))?;
+    let tunnel = Socks5Stream::connect(proxy, (host, port)).await?;
+    client_async_tls_with_config(&config.url, tunnel.into_inner(), None, None)
+        .await
+        .map_err(|error| Box::new(error) as Box<dyn std::error::Error + Send + Sync>)
 }
 
 const FAR_FUTURE: Duration = Duration::from_secs(u64::MAX / 4);

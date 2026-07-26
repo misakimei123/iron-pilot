@@ -2133,6 +2133,8 @@ mod tests {
                 "bybit_order_facts",
                 "bybit_private_events",
                 "bybit_private_sync_state",
+                "bybit_testnet_order_intents",
+                "bybit_testnet_smoke_evidence",
                 "bybit_wallet_facts",
                 "eligibility_events",
                 "emergency_action_steps",

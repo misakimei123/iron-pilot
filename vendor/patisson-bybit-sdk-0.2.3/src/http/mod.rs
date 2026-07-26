@@ -620,7 +620,7 @@ mod tests {
                     auto_add_margin: true,
                     position_status: PositionStatus::Normal,
                     leverage: dec!(10),
-                    mark_price: dec!(28224.50),
+                    mark_price: Some(dec!(28224.50)),
                     liq_price: None,
                     position_im: Some(dec!(0.00010923)),
                     position_im_by_mp: Some(dec!(0.00010923)),

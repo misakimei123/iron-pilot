@@ -765,14 +765,16 @@ pub struct ExecutionEntry {
     pub trade_iv: Option<Decimal>,
     #[serde(default, deserialize_with = "option_decimal")]
     pub mark_iv: Option<Decimal>,
-    pub mark_price: Decimal,
+    #[serde(default, deserialize_with = "option_decimal")]
+    pub mark_price: Option<Decimal>,
     #[serde(default, deserialize_with = "option_decimal")]
     pub index_price: Option<Decimal>,
     #[serde(default, deserialize_with = "option_decimal")]
     pub underlying_price: Option<Decimal>,
     #[serde(default, deserialize_with = "empty_string_as_none")]
     pub block_trade_id: Option<String>,
-    pub closed_size: Decimal,
+    #[serde(default, deserialize_with = "option_decimal")]
+    pub closed_size: Option<Decimal>,
     pub seq: i64,
     pub is_maker: bool,
 }

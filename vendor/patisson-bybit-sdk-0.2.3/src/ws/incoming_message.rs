@@ -11,7 +11,7 @@ use crate::{
 };
 
 use rust_decimal::{Decimal, serde::str_option::deserialize as option_decimal};
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer, de::Error as _};
 use serde_aux::prelude::{
     deserialize_number_from_string as number,
     deserialize_option_number_from_string as option_number,
@@ -482,10 +482,11 @@ pub struct OrderMsg {
     /// linear, spot: Cumulative trading fee details instead of cumExecFee
     pub cum_fee_detail: Option<serde_json::Value>,
     /// Closed profit and loss for each close position order. The figure is the same as "closedPnl" from Get Closed PnL
+    #[serde(default)]
     pub closed_pnl: Decimal,
     /// Trading fee currency for Spot only. Please understand Spot trading fee currency here
-    #[serde(deserialize_with = "option_decimal")]
-    pub fee_currency: Option<Decimal>,
+    #[serde(default, deserialize_with = "empty_string_as_none")]
+    pub fee_currency: Option<String>,
     /// Time in force
     pub time_in_force: TimeInForce,
     /// Order type. Market,Limit. For TP/SL order, it means the order type after triggered
@@ -773,11 +774,13 @@ pub struct ExecutionMsg {
     pub leaves_qty: Decimal,
     /// Order create type
     /// Spot, Option do not have this key
-    pub create_type: CreateType,
+    #[serde(default, deserialize_with = "empty_string_as_none")]
+    pub create_type: Option<CreateType>,
     /// Order type. Market,Limit
     pub order_type: OrderType,
     /// Stop order type. If the order is not stop order, any type is not returned
-    pub stop_order_type: StopOrderType,
+    #[serde(default, deserialize_with = "empty_string_as_none")]
+    pub stop_order_type: Option<StopOrderType>,
     /// Executed trading fee. You can get spot fee currency instruction here
     pub exec_fee: Decimal,
     /// Execution ID
@@ -787,7 +790,8 @@ pub struct ExecutionMsg {
     /// Execution qty
     pub exec_qty: Decimal,
     /// Profit and Loss for each close position execution. The value keeps consistent with the field "cashFlow" in the Get Transaction Log
-    pub exec_pnl: Decimal,
+    #[serde(default, deserialize_with = "option_decimal")]
+    pub exec_pnl: Option<Decimal>,
     /// Executed type
     pub exec_type: ExecType,
     /// Executed order value
@@ -806,7 +810,8 @@ pub struct ExecutionMsg {
     #[serde(default, deserialize_with = "option_decimal")]
     pub mark_iv: Option<Decimal>,
     /// The mark price of the symbol when executing. valid for option
-    pub mark_price: Decimal,
+    #[serde(default, deserialize_with = "option_decimal")]
+    pub mark_price: Option<Decimal>,
     /// The index price of the symbol when executing. valid for option
     #[serde(default, deserialize_with = "option_decimal")]
     pub index_price: Option<Decimal>,
@@ -817,9 +822,11 @@ pub struct ExecutionMsg {
     #[serde(default, deserialize_with = "empty_string_as_none")]
     pub block_trade_id: Option<String>,
     /// Closed position size
-    pub closed_size: Decimal,
+    #[serde(default, deserialize_with = "option_decimal")]
+    pub closed_size: Option<Decimal>,
     /// Extra trading fee information. Currently, this data is returned only for kyc=Indian user or spot orders placed on the Indonesian site or spot fiat currency orders placed on the EU site. In other cases, an empty string is returned. Enum: feeType, subFeeType
-    pub extra_fees: Option<Vec<ExtraFee>>, // TODO: !!! ignore if empty string !!!
+    #[serde(default, deserialize_with = "extra_fees")]
+    pub extra_fees: Option<Vec<ExtraFee>>,
     /// Cross sequence, used to associate each fill and each position update
     /// The seq will be the same when conclude multiple transactions at the same time
     /// Different symbols may have the same seq, please use seq + symbol to check unique
@@ -836,6 +843,26 @@ pub struct ExtraFee {
     pub sub_fee_type: ExtraSubFeeType,
     pub fee_rate: Decimal,
     pub fee: Decimal,
+}
+
+fn extra_fees<'de, D>(deserializer: D) -> Result<Option<Vec<ExtraFee>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum WireValue {
+        Fees(Vec<ExtraFee>),
+        Empty(String),
+    }
+
+    match WireValue::deserialize(deserializer)? {
+        WireValue::Fees(fees) => Ok(Some(fees)),
+        WireValue::Empty(value) if value.is_empty() => Ok(None),
+        WireValue::Empty(_) => Err(D::Error::custom(
+            "extraFees must be an array or an empty string",
+        )),
+    }
 }
 
 /// A fill from the `fastExecution` private WS topic.
@@ -1543,6 +1570,21 @@ mod tests {
     }
 
     #[test]
+    fn deserialize_current_testnet_spot_order_without_closed_pnl() {
+        let json = r#"{"topic":"order","id":"test-order-event","creationTime":1766600379878,"data":[{"category":"spot","symbol":"BTCUSDT","orderId":"test-order-id","orderLinkId":"ip4-c-012345678901234567890123456789","blockTradeId":"","side":"Buy","positionIdx":0,"orderStatus":"New","cancelType":"UNKNOWN","rejectReason":"EC_NoError","timeInForce":"GTC","isLeverage":"0","price":"64200.1","qty":"0.000078","avgPrice":"","leavesQty":"0.000078","leavesValue":"5.0076078","cumExecQty":"0","cumExecValue":"0.0000000","cumExecFee":"0","orderType":"Limit","stopOrderType":"","orderIv":"","triggerPrice":"0.0","takeProfit":"0.0","stopLoss":"0.0","triggerBy":"","tpTriggerBy":"","slTriggerBy":"","triggerDirection":0,"placeType":"","lastPriceOnCreated":"64848.6","closeOnTrigger":false,"reduceOnly":false,"smpGroup":0,"smpType":"None","smpOrderId":"","slLimitPrice":"0.0","tpLimitPrice":"0.0","marketUnit":"","createdTime":"1766600379876","updatedTime":"1766600379876","feeCurrency":"","slippageTolerance":"","slippageToleranceType":"UNKNOWN","cumFeeDetail":{},"rpiTakerAccess":false,"rpiMatchedQty":"0"}]}"#;
+
+        let message: IncomingMessage = deserialize_json(json).expect("current Testnet order");
+        let IncomingMessage::Topic(TopicMessage::Order(message)) = message else {
+            panic!("expected private order topic");
+        };
+        assert_eq!(message.data.len(), 1);
+        assert_eq!(message.data[0].category, Category::Spot);
+        assert_eq!(message.data[0].order_status, OrderStatus::New);
+        assert_eq!(message.data[0].closed_pnl, Decimal::ZERO);
+        assert_eq!(message.data[0].fee_currency, None);
+    }
+
+    #[test]
     fn deserialize_incoming_message_position() {
         let json = r#"{
             "id": "108985347_position_1765659601915",
@@ -2140,14 +2182,14 @@ mod tests {
                 order_price: dec!(94942.5),
                 order_qty: dec!(0.5),
                 leaves_qty: dec!(0),
-                create_type: CreateType::CreateByUser,
+                create_type: Some(CreateType::CreateByUser),
                 order_type: OrderType::Market,
-                stop_order_type: StopOrderType::UNKNOWN,
+                stop_order_type: Some(StopOrderType::UNKNOWN),
                 exec_fee: dec!(26.3725275),
                 exec_id: String::from("0ab1bdf7-4219-438b-b30a-32ec863018f7"),
                 exec_price: dec!(95900.1),
                 exec_qty: dec!(0.5),
-                exec_pnl: dec!(0.05),
+                exec_pnl: Some(dec!(0.05)),
                 exec_type: ExecType::Trade,
                 exec_value: dec!(47950.05),
                 exec_time: 1746270400353,
@@ -2155,11 +2197,11 @@ mod tests {
                 fee_rate: dec!(0.00055),
                 trade_iv: None,
                 mark_iv: None,
-                mark_price: dec!(95901.48),
+                mark_price: Some(dec!(95901.48)),
                 index_price: None,
                 underlying_price: None,
                 block_trade_id: None,
-                closed_size: dec!(0.5),
+                closed_size: Some(dec!(0.5)),
                 extra_fees: Some(vec![ExtraFee {
                     fee_coin: String::from("USDT"),
                     fee_type: ExtraFeeType::Gst,

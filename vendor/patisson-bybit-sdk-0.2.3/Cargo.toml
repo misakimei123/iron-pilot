@@ -16,9 +16,10 @@ autoexamples = false
 name = "bybit"
 path = "src/lib.rs"
 
-# IronPilot manifest overlay for upstream 0.2.3. The SDK source is unchanged.
-# This removes unused native TLS, system proxy, HTTP/2, Tokio process/signal,
-# and duplicate WebSocket stacks while retaining its HTTP/WS protocol surface.
+# IronPilot audited overlay for upstream 0.2.3. It removes unused native TLS,
+# system proxy, HTTP/2, Tokio process/signal and duplicate WebSocket stacks.
+# Source patches retain the SDK-owned protocol surface while adding lossless
+# backpressure, Testnet proxy transport and current Bybit response compatibility.
 [dependencies.futures-util]
 version = "0.3.33"
 default-features = false
@@ -42,6 +43,11 @@ features = ["json", "query", "rustls"]
 version = "1.42.1"
 default-features = false
 features = ["std", "serde-str", "serde-with-str"]
+
+[dependencies.rustls]
+version = "0.23.42"
+default-features = false
+features = ["ring", "std", "tls12"]
 
 [dependencies.serde]
 version = "1.0.229"
@@ -87,6 +93,12 @@ features = ["macros", "net", "rt", "sync", "time"]
 version = "0.30.0"
 default-features = false
 features = ["connect", "rustls-tls-webpki-roots"]
+
+[dependencies.tokio-socks]
+version = "0.5.3"
+path = "../tokio-socks-0.5.3"
+default-features = false
+features = ["tokio"]
 
 [dependencies.tokio-util]
 version = "0.7.19"
