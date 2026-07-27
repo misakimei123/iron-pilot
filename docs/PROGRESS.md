@@ -4,11 +4,11 @@
 >
 > This file is the single source of truth for current implementation progress.
 >
-> Plan baseline: DEVELOPMENT_PLAN v3.2.0
+> Plan baseline: DEVELOPMENT_PLAN v4.0.0
 >
-> Plan commit: `90d01665939456e5a68210be16187ddec927d14f`
+> Plan commit: `5af5d0494f68ebc9e091336e70ad475b041fbbf9`
 >
-> Last updated: 2026-07-26
+> Last updated: 2026-07-27
 
 ## Document Boundary
 
@@ -19,14 +19,14 @@
 
 ## Current Focus
 
-- Current phase: Phase E — Parallel Hardening
+- Current phase: Phase F — 30-day Testnet Validation
 - In progress:
   - None
 - Ready:
-  - None
+  - P4-02B
 - Blocked:
-  - P3-11
-- Next recommended task: collect the operator-controlled 30-day P3-11 Paper evidence; P4-02B remains dependency-blocked by P3-11
+  - None
+- Next recommended task: prepare the frozen P4-02B Testnet configuration and evidence contract, then obtain separate authorization before starting the 30-day Bybit Testnet write window
 
 ## Task Status
 
@@ -36,6 +36,7 @@
 | `P0-02` | `DONE` | — | 2026-07-24 | `033de133b42ce9a66b126fd8376fdd60b5b34a77` | `docs/DEVELOPMENT_PLAN.md` v2 重建及后续一致性修订 | 仅完成规划治理，未实施业务 Task |
 | `P0-03` | `DONE` | 2026-07-25 | 2026-07-25 | `98f87db43c9d8c23d563ce8df43d521ea434c924` | `docs/adr/0005-bounded-ai-strategy-authority.md`; ADR-0002/0003/0004 superseded/amended 标记；`CONTEXT.md`; 语义断言与 `git diff --check` | 未修改开发计划；未批准任何阶段 Gate |
 | `P0-04` | `DONE` | 2026-07-25 | 2026-07-25 | `93ba9018a50bb49a215eca07e387552d51791a86` | DEVELOPMENT_PLAN v3.0.0；ADR-0006；Task 表/依赖图/正文/Gate 一致性；AITradingPlan JSON、ADR 链接与 v2 遗留隔离检查 | 独立计划修订，无业务代码；未批准任何阶段 Gate |
+| `P0-05` | `DONE` | 2026-07-27 | 2026-07-27 | `5af5d0494f68ebc9e091336e70ad475b041fbbf9` | DEVELOPMENT_PLAN v4.0.0；ADR-0008；个人项目定位；单次 30 天 Testnet E2E；Task 表/依赖图/正文/指标/Gate 一致性 | 独立计划与 ADR 提交，无业务代码；不设置名义资金门槛；未批准 Testnet 写或任何阶段 Gate |
 | `P1-01` | `DONE` | 2026-07-25 | 2026-07-25 | `705ca6f7b5aa4602072cc943295c15ae66bb780e` | Rust 质量门禁；空进程 smoke test；cargo-deny；Gitleaks；CI YAML 校验；零第三方 Cargo 依赖断言 | 无业务伪实现；未修改开发计划或批准 Gate |
 | `P1-02` | `DONE` | 2026-07-25 | 2026-07-25 | `a2d2f4a9ad2851cb9443606942f274e6fa16a914` | 精确 Decimal、稳定 ID、Instrument 与 Strategy Intent 契约测试；三组状态机属性测试；Rust 全门禁；cargo-deny；Gitleaks；无浮点领域类型断言 | 未修改开发计划；未批准任何阶段 Gate |
 | `P1-03` | `DONE` | 2026-07-25 | 2026-07-25 | `62cda475f2d5d7d447264ad916130b3e8cddce9d` | 严格 YAML/环境加载；环境指纹与版本校验；1–3 个 Spot 标的；2C2G 上限；权限单调热加载；33 项测试；cargo-deny；Gitleaks | 未修改开发计划；未批准任何阶段 Gate |
@@ -60,24 +61,26 @@
 | `P3-07B` | `DONE` | 2026-07-26 | 2026-07-26 | `1c68737b78669e9c4cd42c129f465e1eceaf025b` | `ironpilot-telegram-emergency-v1`；SDK chat/user 身份、UUID v4 nonce、二次确认、TTL、一次性消费与统一 Emergency Command；6 项 Telegram 专项测试；143 项全工作区测试及全部质量门禁 | 只构造授权命令，直接交易写入为 0；重启使未确认 challenge fail closed；未批准任何阶段 Gate |
 | `P3-VS` | `DONE` | 2026-07-26 | 2026-07-26 | `919d77b0d67573a0a60729bae12fbf2f16ac3d72` | Repository evidence matrix；143 项测试；用户于 2026-07-26 明确接受证据并批准 Gate | 用户明确决定先不执行线上 DeepSeek/Telegram smoke；不授权 Testnet 写、实盘、永续或新闻能力 |
 | `P3-10B` | `DONE` | 2026-07-26 | 2026-07-26 | `d4f732624574758a8972674ac7e19b9a5eef4860` | `docs/FULL_HISTORICAL_STRATEGY_EVALUATION_V1.md`; 3 targeted tests; 146 workspace tests | Offline-only evaluation; Rule-only is not production eligible; no stage Gate approved |
-| `P3-11` | `BLOCKED` | 2026-07-26 | — | `76049ec4284e583346716ec85abd97994df46104` | `docs/LONG_RUNNING_PAPER_SAFETY_V1.md`; 5 targeted tests; 151 workspace tests | Evidence implementation complete; real 30-day Paper window, credentials, drills, and reviewer Gate remain |
+| `P3-11` | `CANCELLED` | 2026-07-26 | 2026-07-27 | `76049ec4284e583346716ec85abd97994df46104` | `docs/LONG_RUNNING_PAPER_SAFETY_V1.md`; 5 targeted tests; 151 workspace tests; DEVELOPMENT_PLAN v4.0.0 | 独立 30 天 Paper Task/Gate 已合并取消；既有 evidence infrastructure 保留为非强制历史能力 |
 | `P4-01` | `DONE` | 2026-07-26 | 2026-07-26 | `3711e2761c2481363788ca6802b703fb635347ca` | `docs/BYBIT_PRIVATE_SYNC_V1.md`; 5 targeted tests; 156 workspace tests | SDK-owned private protocol; REST ack is not a fill; duplicate effect 0; disconnect/reconciliation convergence; next-Context facts; no stage Gate approved |
 | `P4-02A` | `DONE` | 2026-07-26 | 2026-07-26 | `1ae428bd9285643596555c851a4e5c06c9fb96ec`; `acf07f7ffd2476f307d82a996bec9b08225125df` | `docs/BYBIT_TESTNET_PROTOCOL_SMOKE_V1.md`; online run `1b63e6ca077743099fcccca4e8fa7b67`; 7 targeted tests; 163 workspace tests | Authorized Testnet Spot protocol smoke converged; no Mainnet, real funds, stage Gate, derivatives or capability expansion |
-| `P4-02B` | `PLANNED` | — | — | — | — | — |
-| `P4-03` | `PLANNED` | — | — | — | — | — |
+| `P4-02B` | `READY` | — | — | — | DEVELOPMENT_PLAN v4.0.0；ADR-0008 | 唯一活动的 30-day Bybit Testnet E2E Task；开始前仍需独立 Testnet 写授权 |
+| `P4-03` | `CANCELLED` | — | 2026-07-27 | — | DEVELOPMENT_PLAN v4.0.0；ADR-0008 | 独立 72h Testnet 阶段已合并到 P4-02B，不再进入活动依赖图 |
 | `P4-04` | `PLANNED` | — | — | — | — | — |
 | `D-NEWS-01` | `DEFERRED` | — | — | — | — | 不属于当前排期 |
 | `P5-*` | `DEFERRED` | — | — | — | — | 永续合约；需重新授权 |
-| `P6-*` | `DEFERRED` | — | — | — | — | 真实资金与扩容；需独立 Release Gate 与明确授权 |
+| `P6-*` | `DEFERRED` | — | — | — | — | 无杠杆 Spot 灰度与后续权限扩展；需独立 Release Gate 与明确授权 |
 
 ## Active Blockers
 
-- Task ID: `P3-11`
-- Blocking reason: the authoritative Gate requires a real continuous 30-day Paper run. This workspace has no injected DeepSeek credential or operator-controlled continuously deployed Paper environment, and no real elapsed soak evidence exists yet. Deterministic or virtual-time tests cannot replace it.
-- Discovered: 2026-07-26
-- Related implementation: `76049ec4284e583346716ec85abd97994df46104`; `docs/LONG_RUNNING_PAPER_SAFETY_V1.md`
-- Unblock condition: inject the user-controlled Paper credential/configuration, deploy the frozen build, collect observations with no gap above five minutes for at least 30 days, execute all six required failure drills, preserve normal AI-managed-position and independent Emergency evidence, obtain a `qualified` report, and submit it to the user or authorized reviewer for the Gate decision.
-- Development-plan change required: No.
+None.
+
+The P3-11 blocker recorded on 2026-07-26 was superseded by the explicitly
+authorized DEVELOPMENT_PLAN v4.0.0 revision, not satisfied by elapsed Paper
+evidence. P3-11 is now `CANCELLED`; its former five-minute evidence interval,
+six-drill matrix and `qualified` report are not P4-02B dependencies or Gate
+conditions. P4-02B is statically `READY`, but starting its Testnet write window
+still requires separate user authorization and user-controlled credentials.
 
 未来阻塞项必须记录：
 
@@ -117,6 +120,13 @@
 - Commit：`93ba9018a50bb49a215eca07e387552d51791a86`。
 - 证据：DEVELOPMENT_PLAN 版本提升至 3.0.0；新增 ADR-0006 并 supersede ADR-0005；同步 ADR-0002/0003/0004、`CONTEXT.md` 和 v2 历史文档标记；35 个 Task 定义、32 个活动图节点、全部直接依赖逐项一致；`AITradingPlan v3` JSON 可解析；Task 引用、ADR 相对链接、遗留 P3-02/P3-09 隔离和 `git diff --check` 通过。
 - 已知限制：本 Task 只完成计划、ADR、词汇和历史边界修订，当时没有删除 v2 代码或数据库结构，也没有实现 `AITradingPlan v3`；其后由 P3-12 完成安全迁移；未批准任何阶段 Gate。
+
+### P0-05 — DEVELOPMENT_PLAN v4 个人 Testnet 验证修订
+
+- 结果：重申 IronPilot 是不设名义资金门槛的纯个人项目；取消 P3-11 独立 30 天 Paper Gate 与 P4-03 独立 72h Testnet，把二者连同原 P4-02B 合并为单次 30-day Bybit Testnet E2E；Testnet 通过后只允许审查无杠杆 Spot 灰度的独立立项资格。
+- Commit：`5af5d0494f68ebc9e091336e70ad475b041fbbf9`。
+- 证据：DEVELOPMENT_PLAN 提升至 4.0.0；新增 ADR-0008 并修订 ADR-0001；Task 表、31 个活动图节点、全部直接依赖、正文、指标口径和 Gate 一致；旧五分钟证据间隔、六项演练和 qualification 语义退出活动依赖；`git diff --check` 通过。
+- 已知限制：本 Task 只完成计划和 ADR 修订，没有业务代码；未批准 Testnet 写、真实资金或任何阶段 Gate。
 
 ### P1-01 — Rust 工程骨架与质量门禁
 
@@ -314,6 +324,7 @@
 
 ### P3-11 — Long-running Paper Safety Evidence Infrastructure
 
+- v4 disposition: the standalone Task and Gate are `CANCELLED` and merged into P4-02B. The implementation and evidence below remain historical, optional observability capability; their five-minute interval, six drills and qualification outcome no longer define an active dependency or Gate.
 - Coding result: implemented `ironpilot-paper-soak-evidence-v1` with an immutable manifest, a fixed non-compressible 30-day duration, a five-minute maximum evidence gap, deterministic qualification, stable evidence hashes, and explicit `collecting`/`disqualified`/`qualified` outcomes.
 - Safety evidence: state divergence, unmanaged sells, duplicate business effects, audit gaps, local AI-plan mutation, unanswered managed-position reviews, Emergency availability, LLM calls/tokens/exact cost/replan ceiling, queues, RSS/CPU, and bounded SQLite growth are all recorded and evaluated fail closed.
 - Failure drills: model timeout, invalid model output, market disconnect, restart, resource pressure, and Emergency independence must each prove recovery, zero unauthorized effects, zero audit gaps, zero local plan mutation, and Emergency availability without AI.
@@ -322,7 +333,7 @@
 - Implementation commit: `76049ec4284e583346716ec85abd97994df46104`.
 - Deterministic gates: 4 application qualification tests and 1 SQLite integration test passed. The full workspace passed 151 tests with 0 failures and 1 explicitly ignored live Bybit public-WSS smoke. Formatting, strict Clippy, locked build/test/metadata, cargo-deny advisories/bans/licenses/sources, Gitleaks history plus `crates/` and `docs/`, dependency-zero-diff and protocol-boundary checks, and `git diff --check` passed. `docs/DEVELOPMENT_PLAN.md` remained unchanged.
 - Completion boundary: these tests prove that short, discontinuous, unsafe, over-budget, mutable, or incomplete evidence cannot qualify. They are not 30 elapsed days and do not complete P3-11.
-- Status: `BLOCKED` pending the real operator-controlled 30-day Paper window, credentials, drills, qualified report, and user/authorized-reviewer Gate decision. No new stage Gate was approved.
+- Status: `CANCELLED` by DEVELOPMENT_PLAN v4.0.0. The former Paper blocker was superseded by an authorized plan change rather than satisfied; no new stage Gate was approved.
 
 ### P4-01 — Bybit Private Stream and Order Synchronization
 
@@ -350,9 +361,11 @@
 
 ## Next Action
 
-P4-02A is complete. P4-02B remains dependency-blocked because P3-11 still
-requires the operator-controlled continuous 30-day Paper window, all required
-failure drills, a qualified report and a reviewer decision.
+P4-02A and P3-10B are complete, and P4-02B is now statically `READY`. The next
+recommended task is to prepare and review the frozen P4-02B Testnet
+configuration, metric definitions, stop conditions and rollback path. Starting
+the 30-day Testnet write window still requires separate user authorization and
+user-controlled credentials.
 
 以上内容是依据 `docs/DEVELOPMENT_PLAN.md` 静态依赖生成的进度建议，不改变任何 Task 依赖。
 
