@@ -1,12 +1,12 @@
-# IronPilot DEVELOPMENT_PLAN v3
+# IronPilot DEVELOPMENT_PLAN v4
 
 > 文档状态：`AUTHORITATIVE`
 >
-> 版本：`3.2.0`
+> 版本：`4.0.0`
 >
-> 日期：2026-07-26
+> 日期：2026-07-27
 >
-> 当前范围：AI 主导的 Bybit Spot Paper Vertical Slice、长期 Paper、完整历史证据与 Testnet Gate
+> 当前范围：纯个人 AI 主导 Bybit Spot 验证；完成历史证据、Testnet Protocol Smoke 与单次 30 天 Testnet 端到端 Gate
 >
 > 核心方向：市场与账户事实完整提供给 AI；AI 独立制定精确交易方案；本地系统只做数据、协议、用户授权、执行、恢复和审计，不用 Materializer 或后置策略型 Risk Engine 重写 AI
 >
@@ -24,12 +24,16 @@ v3 依据用户在 2026-07-25 的明确确认建立：
 
 > IronPilot 是 AI 主导交易系统。系统监听 Bybit 15m/1h 行情，计算本地指标和形态，连同账户、持仓、订单、交易所约束和用户可接受最大亏损金额提供给 AI；AI 制定完整交易方案；执行链按 AI 原始方案下单。不得用传统策略空间、确定性 Materializer 或后置策略型 Risk Engine 限制、替换或重写 AI 的交易判断。
 
+v4 依据用户在 2026-07-27 的明确确认建立：
+
+> IronPilot 是纯个人项目，目标是快速验证 AI 主导自动交易的可行性。项目不建设金融机构级平台，不追求形式化混沌工程、100% 故障覆盖或繁琐资格认证，也不在计划中设置名义资金门槛。原 P3-11、P4-02B、P4-03 合并为一次 30 天 Bybit Testnet 端到端验证；Testnet 通过后也只允许独立审查无杠杆 Spot 灰度，不自动授权真实资金。
+
 发生冲突时，适用顺序为：
 
 1. 用户最新明确确认；
 2. 本文件；
-3. ADR-0006 与 ADR-0007；
-4. 与 v3 不冲突的既有 ADR 和实现证据；
+3. ADR-0006、ADR-0007 与 ADR-0008；
+4. 与 v4 不冲突的既有 ADR 和实现证据；
 5. v2 修订文档、旧 ADR、`CONTEXT.md` 历史版本和旧计划。
 
 `docs/AI_STRATEGY_AUTHORITY_REVISION.md`、`docs/MVP_DELIVERY_SCOPE_REVISION.md`、`docs/DEVELOPMENT_PLAN_V2_REVIEW_ACTIONS.md` 和 ADR-0005 属于 v2 历史依据，不得覆盖 v3。
@@ -84,12 +88,13 @@ Task 完成不等于 Gate 自动通过。Codex 不得自行批准阶段 Gate，�
 | `3.0.0` | 2026-07-25 | 恢复 AI 主导交易初衷；取消活动链中的 Strategy Space 白名单、确定性 Materializer 和后置策略型 Risk Engine；AI 直接输出精确完整交易方案；新增只校验不改写的执行合法性与用户授权边界；重建 P3 Task、依赖图、正文和 Gate |
 | `3.1.0` | 2026-07-25 | 建立开源优先、领域边界自有的工程原则；P3-04 优先采用成熟 OpenAI-compatible Rust 库承载通用客户端与协议能力；同步 Task 正文、质量 Gate 和工程重量限制；Task 表、依赖图、阶段顺序、AI 权限边界和 ADR 词汇不变 |
 | `3.2.0` | 2026-07-26 | 将成熟 SDK 复用提升为硬性工程约束：存在满足边界的成熟流行 SDK 时，绝对禁止自建同类协议客户端及 wire logic；P3-07A 必须由主流 Telegram Rust SDK 承载 Bot API 方法、类型与响应解析；同步完成闭环、Task 正文、Gate、测试证据、工程重量限制、ADR-0007 与词汇；Task 表、依赖图、阶段顺序和 AI 权限边界不变 |
+| `4.0.0` | 2026-07-27 | 重申纯个人项目定位并取消名义资金门槛；取消 P3-11 独立 30 天 Paper Gate 和 P4-03 独立 72h Testnet；把 P3-11、P4-02B、P4-03 合并为 P4-02B 单次 30 天 Bybit Testnet 端到端验证；取消六项正式故障注入、五分钟证据间隔和 qualified/disqualified 资格体系；保留四项最低运行检查与全部最低安全不变量；Testnet 通过后仅可进入无杠杆 Spot 灰度的独立审查，不自动授权真实资金；同步 Task 表、依赖图、正文、Gate、ADR 与进度建议 |
 
 ---
 
 ## 1. 产品定义
 
-IronPilot 是由 AI 直接主导交易判断、由确定性系统提供可靠事实和忠实执行能力的自治交易系统。
+IronPilot 是由单个用户建设和运行的个人 AI 自动交易验证项目：AI 直接主导交易判断，确定性系统提供可靠事实、硬授权边界和忠实执行能力。项目不设置固定名义资金上限，也不承担金融机构级平台或多人组织治理要求。
 
 核心产品假设是：
 
@@ -112,8 +117,9 @@ AI 是交易决策权威。Market Features 不是信号生成器；本地规则�
 - SQLite 审计与重启恢复。
 - Telegram 通知和只读查询。
 - `P3-VS` AI 主导 Spot Paper Vertical Slice。
-- `P3-VS` 后并行积累长期 Paper 与完整历史策略证据。
-- 通过独立 Gate 后进入 Bybit Testnet。
+- `P3-VS` 后完成完整历史策略证据与 Testnet Protocol Smoke。
+- 使用完整真实链路完成一次 30 天 Bybit Testnet 端到端验证。
+- Testnet 验证通过后，仅允许独立审查无杠杆 Spot 灰度资格；不自动授权真实资金。
 
 ### 1.2 当前明确非目标
 
@@ -128,6 +134,7 @@ AI 是交易决策权威。Market Features 不是信号生成器；本地规则�
 - 本地 Strategy Space 白名单限制 AI 只能选择预设策略模板。
 - 用 Materializer 替 AI 推导入场、止损、止盈或数量。
 - 用后置 Risk Engine 判断 AI 策略是否值得交易或修改 AI 方案。
+- 金融机构级高可用、形式化混沌工程、100% 故障覆盖、on-call 体系或繁琐的 qualified/disqualified 资格认证。
 
 ### 1.3 “AI 主导”的准确含义
 
@@ -148,6 +155,7 @@ AI 不拥有：
 - 在数据、账户、订单或状态不可信时强制执行；
 - 修改审计记录或伪造交易所事实；
 - 自动授权 Testnet、实盘、永续或新闻能力。
+- 自动授权真实资金或杠杆权限。
 
 ### 1.4 新闻边界
 
@@ -185,6 +193,9 @@ AI 不拥有：
 - **Audit before action**：AI 原始响应、解析结果、校验结果、TradePlan action 和 OrderIntent 必须先持久化，再产生执行副作用。
 - **Exactly-once business effect**：通过稳定幂等键、持久化意图、查询确认和状态机保证一次业务效果。
 - **Managed assets only**：任何卖出、减仓或紧急退出不得超过可证明受管数量。
+- **Reconcile before resume**：服务重启后必须先查询交易所并完成订单、成交、余额和受管资产对账，状态未收敛前禁止恢复正常交易。
+- **Emergency remains independent**：Emergency 不依赖 AI 可用性，只处理项目归属订单和可证明受管资产，完成后不自动恢复开仓。
+- **Locatable evidence**：正常动作、拒绝、恢复和 Emergency 必须保留 correlation ID 与可定位日志，能够追溯 Context、AI Plan、Validation、Order、Fill 和对账结果。
 - **Bounded resources**：队列、任务、上下文、LLM 并发、Token、数据库增长和拒绝后重规划次数均有硬上限。
 - **No silent semantic migration**：Context、Prompt、Model、AITradingPlan Schema、Validator 和 Execution 分别版本化。
 
@@ -567,6 +578,38 @@ queues:
 
 Rule-only 只作为离线对照，不进入生产决策链。
 
+### 7.4 30 天 Bybit Testnet 端到端验证
+
+`P4-02B` 使用一个实际经过 30 个日历日、不可用虚拟时间压缩替代的 Bybit Testnet 窗口，运行以下完整链路：
+
+```text
+实时行情
+→ AITradingPlan
+→ Execution Validator
+→ Bybit Testnet 下单
+→ 私有订单与成交
+→ 订单 / 成交 / 余额 / 受管资产对账
+→ 最新事实进入 AI Decision Context
+→ AI 持仓管理
+```
+
+窗口开始前冻结 Context、Prompt、Model、AITradingPlan Schema、Validator、Execution、用户最大亏损、标的、版本/hash、统计口径、停止条件和回滚方式。30 天内允许发生并如实记录停机、断网或模型失败，不要求五分钟证据间隔、无间断运行，也不生成 `qualified` / `disqualified` 资格结果；缺失区间、不可用时长和恢复结果必须进入最终报告，由用户或授权评审者判断证据是否足够。
+
+最终报告至少统一统计：
+
+| 指标 | 固定口径 |
+|---|---|
+| 胜率 | 已闭合且已实现 PnL 大于 0 的完整交易数 / 全部已闭合完整交易数 |
+| 收益率 | 扣除外部充值/提现影响后，期末按市值计价权益相对期初权益的变化率 |
+| 最大回撤 | 30 天权益曲线任一历史峰值到其后谷值的最大下降比例 |
+| 盈亏比 | 盈利交易平均已实现 PnL / 亏损交易平均已实现亏损绝对值；分母为 0 时报告 `N/A` |
+| 交易次数 | 已闭合的完整开仓—退出交易数；部分成交归并到所属 TradePlan，不重复计数 |
+| Validator 拒绝率 | `REJECT` 次数 / 全部已完成 `ACCEPT + REJECT` Validation 次数，并按稳定原因码拆分 |
+| LLM Token | 分别累计 input、output 和 total token；缺失 usage 的调用单列，禁止推算后混入精确值 |
+| LLM 费用 | 按每次调用绑定的模型和定价版本计算并累计；无法确定的费用单列为 unknown |
+
+计划不预设胜率、收益率或盈亏比阈值。安全不变量是硬失败条件；绩效是否足以支持下一阶段由用户基于报告独立判断，盈利不得抵消任何安全失败。
+
 ---
 
 ## 8. Telegram 与紧急控制
@@ -598,12 +641,12 @@ EmergencyController：
    - AITradingPlan v3、Context、Provider、Validator、TradePlan、Paper、复评、Telegram、Emergency、Minimal Harness。
 4. **Phase D — Prototype Vertical Slice**
    - 通过 `P3-VS`，形成 AI 完整计划直接驱动 Paper 的首条闭环。
-5. **Phase E — Parallel Hardening**
-   - 30 天 Paper、完整历史证据、Testnet Protocol Smoke、故障注入和资源治理。
-6. **Phase F — Testnet and Release**
-   - Qualification Setup、72h 稳定性与恢复、Testnet Qualification Gate、Spot MVP Release Gate。
+5. **Phase E — Evidence and Protocol Readiness**
+   - 完整历史证据、Testnet Protocol Smoke 和最低安全不变量验证。
+6. **Phase F — 30-day Testnet Validation**
+   - 单次 30 天 Bybit Testnet 端到端验证、指标报告和无杠杆 Spot 灰度资格审查。
 
-### 9.2 v3 活动依赖图
+### 9.2 v4 活动依赖图
 
 ```mermaid
 flowchart TD
@@ -611,6 +654,7 @@ flowchart TD
     P002["P0-02 v2 Plan"]
     P003["P0-03 v2 ADR / Vocabulary"]
     P004["P0-04 v3 AI 主导架构修订"]
+    P005["P0-05 v4 个人 Testnet 验证修订"]
     P101["P1-01 Rust / Quality"]
     P102["P1-02 Domain / State"]
     P103["P1-03 Config"]
@@ -633,16 +677,15 @@ flowchart TD
     P307B["P3-07B Telegram Emergency Adapter"]
     P3VS{"P3-VS Prototype Gate"}
     P310B["P3-10B Full Historical Evaluation"]
-    P311["P3-11 Long-running Paper"]
     P401["P4-01 Private Sync"]
     P402A["P4-02A Testnet Protocol Smoke"]
-    P402B["P4-02B Testnet Qualification Setup"]
-    P403["P4-03 Testnet 72h Stability"]
-    P404{"P4-04 Spot MVP Gate"}
+    P402B["P4-02B 30-day Testnet E2E"]
+    P404{"P4-04 Spot Gray Eligibility Review"}
 
     P001 --> P002
     P002 --> P003
     P003 --> P004
+    P004 --> P005
     P002 --> P101
     P003 --> P102
     P101 --> P102
@@ -692,7 +735,6 @@ flowchart TD
     P308 --> P3VS
     P310A --> P3VS
     P3VS --> P310B
-    P3VS --> P311
     P3VS --> P401
     P202 --> P401
     P301 --> P401
@@ -701,12 +743,11 @@ flowchart TD
     P3VS --> P402A
     P402A --> P402B
     P310B --> P402B
-    P311 --> P402B
-    P402B --> P403
-    P403 --> P404
+    P005 --> P402B
+    P402B --> P404
 ```
 
-`P3-02` 和 `P3-09` 是 v2 遗留 Task，不进入 v3 活动依赖图。
+`P3-02` 和 `P3-09` 是 v2 遗留 Task；`P3-11` 独立 Long-running Paper 与 `P4-03` 独立 72h Testnet 已由 v4 合并取消。它们均不进入 v4 活动依赖图。
 
 ---
 
@@ -718,6 +759,7 @@ flowchart TD
 | `P0-02` | DEVELOPMENT_PLAN v2 历史重建 | `P0-01` |
 | `P0-03` | v2 ADR 与词汇对齐 | `P0-02` |
 | `P0-04` | DEVELOPMENT_PLAN v3 AI 主导架构修订 | `P0-03` |
+| `P0-05` | DEVELOPMENT_PLAN v4 个人 Testnet 验证修订 | `P0-04` |
 | `P1-01` | Rust 工程骨架与质量门禁 | `P0-02` |
 | `P1-02` | 核心领域、v2 Strategy Intent 与状态机（基础） | `P0-03`,`P1-01` |
 | `P1-03` | 配置、多标的与启动校验 | `P1-02` |
@@ -742,15 +784,15 @@ flowchart TD
 | `P3-07B` | Telegram Emergency Adapter | `P3-07A`,`P3-08` |
 | `P3-VS` | AI-Dominant Spot Paper Vertical Slice Gate | `P3-04`,`P3-05`,`P3-06`,`P3-07A`,`P3-07B`,`P3-08`,`P3-10A` |
 | `P3-10B` | Full Historical Strategy Evaluation | `P3-VS` |
-| `P3-11` | Long-running Paper Safety | `P3-VS` |
+| `P3-11` | 独立 Long-running Paper Safety（v4 合并取消） | 不进入活动依赖图 |
 | `P4-01` | Bybit 私有流与订单同步 | `P3-VS`,`P2-02`,`P3-01` |
 | `P4-02A` | Testnet Protocol Smoke | `P3-VS`,`P4-01`,`P3-08` |
-| `P4-02B` | Testnet Qualification Setup | `P4-02A`,`P3-10B`,`P3-11` |
-| `P4-03` | Testnet 72h Stability and Recovery | `P4-02B` |
-| `P4-04` | Spot MVP Release Gate | `P4-03` |
+| `P4-02B` | 30-day Bybit Testnet End-to-End Validation | `P0-05`,`P4-02A`,`P3-10B` |
+| `P4-03` | 独立 Testnet 72h Stability and Recovery（v4 合并取消） | 不进入活动依赖图 |
+| `P4-04` | Spot MVP / Spot Gray Eligibility Review | `P4-02B` |
 | `D-NEWS-01` | 新闻风控重新立项 | 不进入当前依赖图 |
 | `P5-*` | 永续合约 | `P4-04` 后重新授权 |
-| `P6-*` | 真实资金与扩容 | 独立 Release Gate 与明确授权 |
+| `P6-*` | 无杠杆 Spot 灰度与后续权限扩展 | `P4-04` 后独立立项、Release Gate 与明确授权 |
 
 ---
 
@@ -764,6 +806,13 @@ flowchart TD
 - **交付物**：本计划、ADR-0006、相关 ADR/词汇/进度同步。
 - **依赖**：`P0-03`。
 - **验收**：Task 表、依赖图、正文和 Gate 一致；计划版本提升；独立提交；无业务代码。
+
+#### `P0-05` DEVELOPMENT_PLAN v4 个人 Testnet 验证修订
+
+- **目标**：把产品约束收敛为不设名义资金门槛的个人项目，并用一次 30 天 Bybit Testnet 端到端验证替代独立 Paper/Testnet 资格阶段。
+- **边界**：只修改权威计划、相关 ADR 和进度建议；不实现或修改业务代码，不批准 Testnet 或真实资金写入。
+- **依赖**：`P0-04`。
+- **验收**：版本提升；产品定位、Task 表、依赖图、正文、指标口径和 Gate 一致；相关 ADR accepted；计划与进度分别独立提交；无业务代码。
 
 ### P1/P2/P3 已完成基础
 
@@ -859,7 +908,8 @@ flowchart TD
 
 #### `P3-11` Long-running Paper Safety
 
-- **目标**：30 天 Paper soak、故障注入、资源、数据库增长、预算和恢复证据。
+- **v4 状态**：独立 Task 与 Gate 取消，范围合并到 `P4-02B`。
+- **历史实现**：既有 Paper soak evidence infrastructure 可作为非强制观测能力复用，但其 30 天 Paper、五分钟最大证据间隔、六项故障演练和 `qualified` / `disqualified` 结果不再构成任何活动 Gate 或后继依赖。
 
 ### P4 — Testnet and Release
 
@@ -871,17 +921,23 @@ flowchart TD
 
 - **范围**：极少量 Testnet 下单/查询/撤单、私有订单/成交、幂等、Emergency 和重启对账；仍需当时明确写授权。
 
-#### `P4-02B` Testnet Qualification Setup
+#### `P4-02B` 30-day Bybit Testnet End-to-End Validation
 
-- **范围**：冻结 Context、Prompt、Model、AITradingPlan Schema、Validator、Execution、用户最大亏损、回滚和停止条件。
+- **目标**：在单个实际经过 30 个日历日的窗口内，用实时行情、AITradingPlan、Validator、Bybit Testnet 下单、私有订单/成交、对账和 AI 持仓管理证明完整自动交易链的可行性。
+- **准备**：窗口开始前冻结 Context、Prompt、Model、AITradingPlan Schema、Validator、Execution、用户最大亏损、标的、版本/hash、指标口径、停止条件和回滚方式。
+- **最低运行检查**：窗口内各完成并记录一次服务重启、一次短暂网络断开、一次模型请求失败和一次 Emergency 验证；不得把检查扩大为形式化混沌工程或机构级故障矩阵。
+- **证据**：按第 7.4 节统计胜率、收益率、最大回撤、盈亏比、交易次数、Validator 拒绝率、LLM Token 和费用，并记录停机、缺失区间、恢复和异常。
+- **取消要求**：不要求独立 30 天 Paper、额外 72h Testnet、六项正式故障注入、五分钟证据间隔或 `qualified` / `disqualified` 资格体系。
+- **验收**：满足第 12.5 节；Gate 决策仍由用户或授权评审者作出。
 
 #### `P4-03` Testnet 72h Stability and Recovery
 
-- **验收**：满足第 12.6 节。
+- **v4 状态**：独立 Task 与 Gate 取消，最低恢复检查和 Testnet 运行证据已合并到 `P4-02B`，不得再次追加独立 72 小时阶段。
 
-#### `P4-04` Spot MVP Release Gate
+#### `P4-04` Spot MVP / Spot Gray Eligibility Review
 
-- **边界**：不授权真实资金、永续或新闻能力。
+- **目标**：审查 30 天 Testnet 安全与绩效报告是否足以结束 Spot MVP，并决定是否允许另行立项无杠杆 Spot 灰度。
+- **边界**：通过只产生下一阶段的立项资格，不授权 Mainnet 凭证、真实资金订单、杠杆、永续或新闻能力。
 
 ---
 
@@ -903,6 +959,9 @@ flowchart TD
 | 重复业务订单效果 | 0 |
 | AI Context → Plan → Validation → Order 追溯率 | 100% |
 | 交易所状态未知时同目的盲目补单 | 0 |
+| 服务重启后未先完成对账即恢复正常交易 | 0 |
+| Emergency 处理非项目归属订单或非受管资产 | 0 |
+| 正常动作、拒绝、恢复或 Emergency 缺少 correlation ID 与可定位日志 | 0 |
 | 未记录例外而自研已有成熟开源实现的通用协议基础设施 | 0 |
 | 存在满足边界的成熟 SDK 时自建协议客户端、wire DTO、响应 envelope 或同类协议逻辑 | 0 |
 
@@ -920,15 +979,7 @@ flowchart TD
 - 2C2G 资源证据；
 - 活动链无 Materializer、策略型 Risk Engine 和新闻节点。
 
-### 12.3 Long-running Paper Safety Gate
-
-- 连续 30 天；
-- 无未解释状态分叉、未受管卖出、重复业务效果或审计缺口；
-- LLM 预算、拒绝重规划上限、队列、RSS/CPU 和数据库增长有证据；
-- 模型超时、无效输出、断连、重启和资源压力均 fail closed；
-- 正常持仓管理持续由 AI 输出，Emergency 路径独立可用。
-
-### 12.4 Historical Strategy Evidence Gate
+### 12.3 Historical Strategy Evidence Gate
 
 - 不可变 manifest 绑定 Context、Prompt、Model、AI Plan、Validator、Execution、费用和滑点版本；
 - 无 future data；
@@ -937,7 +988,7 @@ flowchart TD
 - 样本外、压力测试、逐笔差异和必要独立参考完成；
 - 盈利不能覆盖权限或安全不变量失败。
 
-### 12.5 Testnet Protocol Smoke Gate
+### 12.4 Testnet Protocol Smoke Gate
 
 - 仅协议和状态同步；
 - 极少量已授权 Testnet 动作；
@@ -946,17 +997,43 @@ flowchart TD
 - REST ack 与最终状态分离；
 - 私有流、对账、重启和 Emergency 收敛。
 
-### 12.6 Bybit Testnet Qualification Gate
+### 12.5 30-day Bybit Testnet End-to-End Validation Gate
 
-- Protocol Smoke、Long-running Paper 和 Historical Evidence 均通过；
-- 72h 稳定运行；
-- Context、Prompt、Model、AITradingPlan、Validator、Execution 和用户授权冻结；
-- 无超授权订单、无本地改写、无状态分叉；
-- 故障恢复、停止条件和回滚证据完成。
+进入条件：
 
-### 12.7 Live Release Gate
+- `P4-02A` Testnet Protocol Smoke 与 `P3-10B` Historical Strategy Evidence 已完成；
+- 当前 Testnet 写操作得到独立授权，凭证不进入仓库；
+- 按第 7.4 节冻结版本、配置、统计口径、停止条件和回滚方式。
 
-当前计划不自动进入真实资金。必须独立立项，明确专用账户、密钥权限、IP、资金上限、用户最大亏损、模型证据、on-call、回滚和剩余风险。
+必须证明：
+
+- 单个 Testnet 窗口实际经过至少 30 个日历日，未用虚拟时间或历史回放替代；
+- 30 天期间运行实时行情 → AITradingPlan → Validator → Bybit Testnet 下单 → 私有订单/成交 → 对账 → AI 持仓管理的完整链路；
+- 第 12.1 节安全与权限不变量全部满足，任何盈利都不能抵消失败；
+- 各完成并记录一次服务重启、一次短暂网络断开、一次模型请求失败和一次 Emergency 验证；
+- 服务重启先对账再恢复；网络或模型不可用时 fail closed；重复请求无重复业务效果；Emergency 仅处理项目归属订单和受管资产；
+- 最终报告包含第 7.4 节全部绩效、Validator 和 LLM 指标，以及停机、缺失区间、异常、恢复、停止与回滚记录；
+- 正常持仓管理动作来自 AI，所有正常动作、拒绝、订单、成交、恢复和 Emergency 均有可定位日志。
+
+明确不要求：
+
+- 另行完成 30 天本地 Paper；
+- 在 30 天 Testnet 前后再增加独立 72 小时阶段；
+- 六项正式故障注入、形式化混沌工程或 100% 故障覆盖；
+- 每五分钟一条证据或无缺口心跳；
+- `qualified` / `disqualified` 资格状态机或繁琐认证材料。
+
+Gate 结论只能由用户或授权评审者基于完整报告作出。计划不预设绩效阈值；安全不变量失败时不得通过，证据缺口是否足以拒绝由评审者明确记录。
+
+### 12.6 Spot MVP / Spot Gray Eligibility Review
+
+30 天 Testnet Gate 通过是进入本审查的必要条件，但不自动产生任何 Mainnet 或真实资金权限。用户必须单独决定：
+
+- Testnet 的安全、恢复和绩效证据是否足以结束 Spot MVP；
+- 是否允许为无杠杆 Spot 灰度创建独立计划；
+- 灰度专用账户、Mainnet 凭证权限、用户最大亏损授权、标的、停止条件和回滚方式。
+
+即使审查通过，也只允许后续独立立项和明确授权；不得自动下真实资金订单，不得增加杠杆、永续、新闻或其他能力。任何后续权限扩展都必须基于新增证据再次独立审查。
 
 ---
 
@@ -982,12 +1059,21 @@ flowchart TD
 ### 13.3 集成
 
 - Facts → Context → AI Plan → Validation → TradePlan → Paper；
+- 实时 Facts → Context → AI Plan → Validation → Bybit Testnet → Private Order/Fill → Reconciliation → AI Position Review；
 - AI invalid → reject → bounded replan；
 - Fill/Order → next Context → AI review；
 - restart、未知状态、幂等和审计；
 - Emergency 独立于 AI。
 
-### 13.4 历史正确性
+### 13.4 30 天 Testnet 运行证据
+
+- 使用实际日历时间，不以虚拟时钟、历史 Replay 或本地 Paper 替代；
+- 统计口径、版本和价格表在窗口开始前冻结，变更必须显式记录并由评审者判断是否重启窗口；
+- 对停机、缺失数据和恢复保留区间证据，不要求五分钟心跳或 `qualified` / `disqualified` 判定；
+- 一次服务重启、一次短暂网络断开、一次模型请求失败和一次 Emergency 验证均有前置状态、动作、恢复与业务效果证据；
+- 胜率、收益率、最大回撤、盈亏比、交易次数、Validator 拒绝率、LLM Token 和费用按第 7.4 节复算一致。
+
+### 13.5 历史正确性
 
 - 不可变 manifest；
 - 前缀不变和无 future data；
@@ -996,7 +1082,7 @@ flowchart TD
 - 本地改写 AI Plan 检测；
 - Rule-only 只作离线参考。
 
-### 13.5 依赖复用与供应链
+### 13.6 依赖复用与供应链
 
 - 每个新增通用基础设施实现先记录候选开源库比较，包括维护活跃度、社区采用、许可证、安全、资源重量、可审计性和边界适配；
 - 存在满足边界的成熟、流行、持续维护且许可证兼容 SDK 时必须采用；禁止以“薄封装”“依赖较少”“便于测试”为由重新实现 SDK 已提供的协议方法、路径、wire DTO、响应 envelope、轮询、分页、重试或错误协议；
@@ -1037,11 +1123,22 @@ flowchart TD
 
 - **控制**：任何本地改写、超授权、未审计执行、未受管卖出或状态分叉直接失败，盈利不能抵消。
 
+### 14.7 精简故障验证遗漏长尾失败
+
+- **失败路径**：个人项目只做四项最低运行检查，无法覆盖所有交易所、网络、模型和主机组合故障。
+- **控制**：不声称 100% 故障覆盖；用 fail closed、幂等、受管资产、重启先对账、Emergency 和可定位日志限制未知失败的业务后果，发现真实缺口后按证据补充定向测试。
+
+### 14.8 Testnet 绩效不能直接外推真实资金
+
+- **失败路径**：Testnet 流动性、成交质量和运行环境与 Mainnet 不完全一致，30 天样本也可能不足以覆盖市场状态。
+- **控制**：Testnet 通过只允许审查无杠杆 Spot 灰度的立项资格；真实资金权限和后续权限扩展必须独立授权并重新设定停止条件。
+
 ---
 
 ## 15. 工程重量限制
 
 - 保持模块化单体和 SQLite。
+- 以单用户个人项目为设计边界，不设置名义资金门槛，不引入金融机构级组织、认证、on-call、形式化混沌工程或全故障矩阵。
 - 不因 AI 主导引入 Agent 工具、MCP 执行、通用 DSL 或多模型平台。
 - 在满足同一协议与安全边界的候选中，选择成熟、流行、持续维护、许可证兼容且边界清晰的最小 SDK，避免引入覆盖面远大于当前 Task 的完整框架。
 - HTTP、TLS、WebSocket、序列化、Telegram/Provider/交易所标准协议、数据库、迁移、指标和重试等通用基础设施必须复用成熟开源库；存在合适 SDK 时绝对禁止重复实现一套协议逻辑。
@@ -1098,7 +1195,9 @@ Spot MVP 只有在以下条件全部满足后才可审查完成：
 - AI 直接制定并管理完整精确交易方案；
 - 本地策略生成和 AI Plan 改写次数为 0；
 - 用户最大亏损、余额、受管资产、协议、状态和审计边界不可绕过；
-- Prototype、Long-running Paper、Historical Evidence 和 Bybit Testnet Qualification Gate 独立通过；
+- Prototype、Historical Evidence、Testnet Protocol Smoke 和 30-day Bybit Testnet End-to-End Validation Gate 按各自权限完成；
 - 所有正常动作可从 Context 追溯到 AI 原始响应、Validation、Order 和 Fill；
 - 无新闻、实盘、永续或额外权限的隐式扩展；
 - 用户或授权评审者完成最终 Gate 决策，Codex 不自行批准。
+
+Spot MVP 完成仍不授权真实资金。它最多使无杠杆 Spot 灰度具备独立立项资格；Mainnet 写入和任何后续权限扩展必须重新取得用户明确授权。
